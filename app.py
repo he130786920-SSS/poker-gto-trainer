@@ -127,80 +127,65 @@ def start_hand():
 if st.session_state.stage == 'INIT': start_hand()
 
 # ==========================================
-# 4. RWD 響應式 SVG 牌桌繪製引擎
+# 4. RWD 響應式 SVG 牌桌繪製引擎 (強制去縮排)
 # ==========================================
 def draw_card(card, x, y):
     if not card: return ""
     rank, suit = card[:-1], card[-1]
     color = "#e53e3e" if suit in ['♥', '♦'] else "#1a202c"
-    return f"""
-    <g transform="translate({x}, {y})">
-        <rect x="0" y="0" width="36" height="52" rx="4" fill="white" stroke="#718096" stroke-width="1"/>
-        <text x="18" y="26" font-family="Arial" font-size="20" font-weight="bold" fill="{color}" text-anchor="middle" dominant-baseline="central">{rank}{suit}</text>
-    </g>
-    """
+    # 強制去縮排
+    return f"""<g transform="translate({x}, {y})">
+<rect x="0" y="0" width="36" height="52" rx="4" fill="white" stroke="#718096" stroke-width="1"/>
+<text x="18" y="26" font-family="Arial" font-size="20" font-weight="bold" fill="{color}" text-anchor="middle" dominant-baseline="central">{rank}{suit}</text>
+</g>"""
 
 def draw_player(cx, cy, name, pos, stack, bet, is_hero=False, cards=None):
     svg = ""
-    # 籌碼下注區 (往中心靠攏)
     if bet > 0:
         bx = cx + (400 - cx) * 0.25
         by = cy + (250 - cy) * 0.25
-        svg += f"""
-        <rect x="{bx-25}" y="{by-12}" width="50" height="24" rx="12" fill="rgba(0,0,0,0.7)"/>
-        <text x="{bx}" y="{by}" font-family="Arial" font-size="12" font-weight="bold" fill="#68d391" text-anchor="middle" dominant-baseline="central">{bet}</text>
-        """
+        svg += f"""<rect x="{bx-25}" y="{by-12}" width="50" height="24" rx="12" fill="rgba(0,0,0,0.7)"/>
+<text x="{bx}" y="{by}" font-family="Arial" font-size="12" font-weight="bold" fill="#68d391" text-anchor="middle" dominant-baseline="central">{bet}</text>"""
     
-    # 玩家資訊框
     border = "#ecc94b" if is_hero else "#4a5568"
     bg = "#2d3748" if is_hero else "#1a202c"
     badge = "#ecc94b" if is_hero else "#e2e8f0"
     
-    svg += f"""
-    <rect x="{cx-45}" y="{cy-18}" width="90" height="36" rx="6" fill="{bg}" stroke="{border}" stroke-width="2"/>
-    <rect x="{cx-42}" y="{cy-14}" width="22" height="14" rx="3" fill="{badge}"/>
-    <text x="{cx-31}" y="{cy-7}" font-family="Arial" font-size="9" font-weight="bold" fill="black" text-anchor="middle" dominant-baseline="central">{pos}</text>
-    <text x="{cx-15}" y="{cy-7}" font-family="Arial" font-size="11" font-weight="bold" fill="white" dominant-baseline="central">{name}</text>
-    <text x="{cx}" y="{cy+8}" font-family="Arial" font-size="12" font-weight="bold" fill="#ecc94b" text-anchor="middle" dominant-baseline="central">{stack} BB</text>
-    """
+    svg += f"""<rect x="{cx-45}" y="{cy-18}" width="90" height="36" rx="6" fill="{bg}" stroke="{border}" stroke-width="2"/>
+<rect x="{cx-42}" y="{cy-14}" width="22" height="14" rx="3" fill="{badge}"/>
+<text x="{cx-31}" y="{cy-7}" font-family="Arial" font-size="9" font-weight="bold" fill="black" text-anchor="middle" dominant-baseline="central">{pos}</text>
+<text x="{cx-15}" y="{cy-7}" font-family="Arial" font-size="11" font-weight="bold" fill="white" dominant-baseline="central">{name}</text>
+<text x="{cx}" y="{cy+8}" font-family="Arial" font-size="12" font-weight="bold" fill="#ecc94b" text-anchor="middle" dominant-baseline="central">{stack} BB</text>"""
     
     if is_hero and cards:
         svg += draw_card(cards[0], cx-40, cy-75)
         svg += draw_card(cards[1], cx+4, cy-75)
     return svg
 
-# 生成整張 SVG
 board_w = len(st.session_state.board) * 40 - 4
 start_x = 400 - board_w / 2
 cards_svg = "".join([draw_card(c, start_x + i*40, 210) for i, c in enumerate(st.session_state.board)])
 
-table_svg = f"""
-<div style="width:100%; max-width:800px; margin:auto; background:#121212; border-radius:12px; padding:10px;">
+# 最關鍵的修改：table_svg 內部絕對不留任何換行縮排
+table_svg = f"""<div style="width:100%; max-width:800px; margin:auto; background:#121212; border-radius:12px; padding:10px;">
 <svg viewBox="0 0 800 500" width="100%" height="100%" style="display:block;">
-    <!-- 桌子 -->
-    <ellipse cx="400" cy="250" rx="350" ry="180" fill="#1e4d2b" stroke="#3c2415" stroke-width="12" style="box-shadow:inset 0 0 20px black;"/>
-    
-    <!-- 底池與公牌 -->
-    <rect x="340" y="165" width="120" height="28" rx="14" fill="rgba(0,0,0,0.6)"/>
-    <text x="400" y="179" font-family="Arial" font-size="14" font-weight="bold" fill="#f6e05e" text-anchor="middle" dominant-baseline="central">Pot: {st.session_state.pot:.1f} BB</text>
-    {cards_svg}
-
-    <!-- 座位 -->
-    {draw_player(160, 110, "TAG", "HJ", st.session_state.bots[0].stack, st.session_state.bots[0].bet)}
-    {draw_player(400, 70,  "LAG", "CO", st.session_state.bots[1].stack, st.session_state.bots[1].bet)}
-    {draw_player(640, 110, "Fish", "BTN", st.session_state.bots[2].stack, st.session_state.bots[2].bet)}
-    {draw_player(680, 340, "Nit", "SB", st.session_state.bots[3].stack, st.session_state.bots[3].bet)}
-    {draw_player(120, 340, "Maniac", "BB", st.session_state.bots[4].stack, st.session_state.bots[4].bet)}
-    
-    <!-- Hero 座位 -->
-    {draw_player(400, 420, "HERO", st.session_state.hero_pos, st.session_state.hero_stack, st.session_state.hero_bet, True, st.session_state.hero_cards)}
+<ellipse cx="400" cy="250" rx="350" ry="180" fill="#1e4d2b" stroke="#3c2415" stroke-width="12" style="box-shadow:inset 0 0 20px black;"/>
+<rect x="340" y="165" width="120" height="28" rx="14" fill="rgba(0,0,0,0.6)"/>
+<text x="400" y="179" font-family="Arial" font-size="14" font-weight="bold" fill="#f6e05e" text-anchor="middle" dominant-baseline="central">Pot: {st.session_state.pot:.1f} BB</text>
+{cards_svg}
+{draw_player(160, 110, "TAG", "HJ", st.session_state.bots[0].stack, st.session_state.bots[0].bet)}
+{draw_player(400, 70,  "LAG", "CO", st.session_state.bots[1].stack, st.session_state.bots[1].bet)}
+{draw_player(640, 110, "Fish", "BTN", st.session_state.bots[2].stack, st.session_state.bots[2].bet)}
+{draw_player(680, 340, "Nit", "SB", st.session_state.bots[3].stack, st.session_state.bots[3].bet)}
+{draw_player(120, 340, "Maniac", "BB", st.session_state.bots[4].stack, st.session_state.bots[4].bet)}
+{draw_player(400, 420, "HERO", st.session_state.hero_pos, st.session_state.hero_stack, st.session_state.hero_bet, True, st.session_state.hero_cards)}
 </svg>
-</div>
-"""
+</div>"""
+
 st.markdown(table_svg, unsafe_allow_html=True)
 
 # ==========================================
-# 5. 手機友善操控面板 (原生組件)
+# 5. 手機友善操控面板
 # ==========================================
 st.write("---")
 hand_cat = get_hand_category(st.session_state.hero_cards[0], st.session_state.hero_cards[1])
@@ -235,7 +220,6 @@ elif st.session_state.stage == 'FLOP':
     cbet_val = 0.0
     if action == 'C-bet 下注':
         max_bet = min(st.session_state.hero_stack, st.session_state.pot * 2.5)
-        # 手機友善的無段滑桿，預設 33% 底池
         cbet_val = st.slider("選擇 C-bet 尺寸 (左右滑動):", 1.0, float(max_bet), round(st.session_state.pot * 0.33, 1), 0.5)
         st.caption(f"⚡ 目前尺寸約為底池的 **{(cbet_val/st.session_state.pot)*100:.0f}%**")
 
@@ -258,6 +242,6 @@ elif st.session_state.stage == 'SHOWDOWN':
         st.markdown(r)
     
     if st.button("下一手牌", type="primary", use_container_width=True):
-        st.session_state.hero_stack += st.session_state.pot # 模擬收池
+        st.session_state.hero_stack += st.session_state.pot
         start_hand()
         st.rerun()

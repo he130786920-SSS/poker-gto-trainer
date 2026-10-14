@@ -11,8 +11,7 @@ SUITS = ['♠', '♥', '♦', '♣']
 RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A']
 RANK_VALUES = {r: i for i, r in enumerate(RANKS, start=2)}
 
-def create_deck():
-    return [r + s for r in RANKS for s in SUITS]
+def create_deck(): return [r + s for r in RANKS for s in SUITS]
 
 def get_hand_category(cards):
     if not cards or len(cards) < 2: return "Unknown"
@@ -28,17 +27,13 @@ def evaluate_5card(hand):
     suits = [c[-1] for c in hand]
     is_flush = len(set(suits)) == 1
     unique_ranks = sorted(list(set(ranks)), reverse=True)
-    is_straight = False
-    straight_high = 0
+    is_straight, straight_high = False, 0
     if len(unique_ranks) >= 5:
         for i in range(len(unique_ranks) - 4):
             if unique_ranks[i] - unique_ranks[i+4] == 4:
-                is_straight = True
-                straight_high = unique_ranks[i]
-                break
+                is_straight = True; straight_high = unique_ranks[i]; break
         if not is_straight and set([14, 2, 3, 4, 5]).issubset(set(ranks)):
-            is_straight = True
-            straight_high = 5
+            is_straight = True; straight_high = 5
     counts = Counter(ranks)
     count_vals = sorted(counts.values(), reverse=True)
     order_ranks = sorted(counts.keys(), key=lambda r: (counts[r], r), reverse=True)
@@ -70,29 +65,41 @@ def evaluate_board_texture(board):
     return "乾燥面 (Dry/Static)"
 
 # ==========================================
-# 2. GTO 頻率與保護教練模組
+# 2. GTO 頻率、保護與多人底池教練模組
 # ==========================================
-def analyze_gto_preflop(hand_cat, pos, to_call, is_open):
+def analyze_gto_preflop(hand_cat, pos, to_call, is_raise):
     if pos == 'BB' and to_call == 0:
-        return "🛡️ **GTO 混合策略 (大盲)**：你擁有大盲免費過牌權。除非拿到頂端 15% 強牌需主動加注 (Value/Protection)，否則 85% 頻率應 Check 看翻牌，實現邊緣牌的攤牌價值。"
-    if is_open:
-        return f"🎯 **GTO 頻率 (位置 {pos})**：起手牌 {hand_cat}。GTO 翻前是嚴格的頻率遊戲。強牌 (如 AQ+, 88+) 屬於 100% Open 範圍；邊緣同花連牌 (如 87s) 則依照位置採取 20%-50% 的混合加注策略以平衡範圍。"
-    return f"⚖️ **GTO 頻率 (面對加注)**：面對前方行動，{hand_cat} 的防守頻率取決於賠率。大盲位可寬幅跟注 (約 45% 頻率) 抵抗偷盲；強牌則應以 80%+ 頻率進行 3-Bet，奪取主動權並施加壓力。"
+        return "🛡️ **GTO 混合策略 (大盲)**：你擁有大盲免費過牌權。只有頂端 10-15% 強牌需加注 (保護/價值)，其餘 85% 頻率應 Check 實現攤牌價值。"
+    if to_call == 0: # First to act or facing limpers
+        return f"🎯 **GTO 頻率 (位置 {pos})**：起手牌 {hand_cat}。GTO 翻前是嚴格的頻率遊戲。強牌 (AQ+, 88+) 100% Open；邊緣同花連牌 (如 87s) 在此位置建議 20%-50% 頻率混合加注，其餘棄牌。"
+    if is_raise: # 3-Bet or 4-Bet
+        return f"🔥 **GTO 頻率 (3-Bet/4-Bet)**：面對加注選擇反加！GTO 在此會使用兩極化範圍：用頂端強牌 (AA, KK, AK) 打價值，並混合 30% 頻率的同花 A 或同花連牌進行半詐唬，給予對手極大壓力。"
+    # Calling a raise
+    return f"⚖️ **GTO 頻率 (平跟防守)**：面對加注，平跟 (Flat Call) 通常佔防守範圍的 40%-60%（尤其是大盲位有賠率優勢時）。但要注意，平跟太多容易導致多人底池 (Multi-way)，使手牌勝率稀釋。"
 
-def analyze_gto_postflop(street, bet, pot, texture):
+def analyze_gto_postflop(street, bet, pot, texture, is_multiway):
+    mw_text = "🧑‍🤝‍🧑 **[多人底池注意]**：" if is_multiway else "🤺 **[單挑底池]**："
+    
     if bet == 0: 
-        return f"🛡️ **GTO 頻率 (過牌 Check)**：\n在『{texture}』上過牌，通常佔整體策略的 **45%-60% 頻率**。GTO 建議用中等牌力 (如弱頂對/中對) 過牌來實現**攤牌價值 (Showdown Value)**，同時保護你的過牌範圍不被對手過度剝削。這是一個混合策略中的被動防守節點。"
+        adv = f"{mw_text} 在『{texture}』過牌。GTO 中過牌頻率通常佔 40%-60%。"
+        if is_multiway: adv += " 在多人底池中，你的防守負擔被分攤，且對手有強牌的機率大增，GTO 要求你**大幅提高過牌頻率**，放棄邊緣牌的詐唬。"
+        else: adv += " 建議用中等牌力 (弱頂對/中對) 過牌來實現攤牌價值，保護過牌範圍不被剝削。"
+        return adv
     
     pct = (bet / pot) * 100
     if pct <= 45: 
-        return f"🎯 **GTO 頻率 (小注 {pct:.0f}%)**：\n這是 GTO **高頻 (約 65-80%)** 使用的尺寸。特別在乾燥面上，你通常擁有**範圍優勢 (Range Advantage)**。小注可以便宜地進行**權益剝奪 (Equity Denial)**，迫使對手放棄大量高張，同時保護你範圍內的邊緣成牌。"
+        adv = f"🎯 **GTO 頻率 (小注 {pct:.0f}%)**：高頻 (約 60-80%) 尺寸。"
+        adv += f" {mw_text} 特別在乾燥面上，小注能便宜地進行**權益剝奪 (Equity Denial)**。若是多人底池，小注也能用來測試水溫，不至於過度膨脹底池。"
+        return adv
     if pct <= 85: 
-        return f"🔥 **GTO 頻率 (大注 {pct:.0f}%)**：\n這是 GTO **低頻 (約 25-40%)** 但極具破壞力的尺寸。在動態/濕滑面上，堅果牌需要**極力保護 (Protection)**。大注能極大化向聽牌收取費用，破壞對手的底池賠率，適合由強成牌與強聽牌組成的兩極化範圍。"
+        adv = f"🔥 **GTO 頻率 (大注 {pct:.0f}%)**：低頻 (約 25-40%) 但破壞力強的尺寸。"
+        adv += f" {mw_text} 在動態/濕滑面上，你的牌極需要**保護 (Protection)**。大注能極大化向聽牌收取費用，破壞對手底池賠率。"
+        return adv
     
-    return f"🚀 **GTO 頻率 (超池 {pct:.0f}%)**：\n極化打法 (Polarized)。GTO 頻率 **低於 10%**。通常只在你有**絕對堅果優勢 (Nut Advantage)** 時使用，用最頂端的價值牌與純詐唬 (Blockers) 混合，給對手施加最大的期望值 (EV) 壓力。"
+    return f"🚀 **GTO 頻率 (超池/All-in {pct:.0f}%)**：極化打法。頻率低於 10%。{mw_text} 通常只在你擁有**絕對堅果優勢 (Nut Advantage)** 時使用，用最頂端價值牌與純詐唬混合，極限施壓。"
 
 # ==========================================
-# 3. 遊戲狀態與 AI 迴圈
+# 3. 遊戲狀態與激進 AI 迴圈
 # ==========================================
 POS_LIST = ['UTG', 'HJ', 'CO', 'BTN', 'SB', 'BB']
 
@@ -106,26 +113,21 @@ def start_new_hand():
     st.session_state.btn_idx = (st.session_state.get('btn_idx', 0) + 1) % 6
     st.session_state.hero_pos = POS_LIST[st.session_state.btn_idx]
     
-    # 破產自動補滿機制
-    if st.session_state.hero_stack <= 0: 
-        st.session_state.hero_stack = 100.0
+    if st.session_state.get('hero_stack', 100.0) <= 0: st.session_state.hero_stack = 100.0
         
     st.session_state.players = []
     for p in POS_LIST:
         is_h = (p == st.session_state.hero_pos)
-        if is_h:
-            stk = st.session_state.hero_stack
+        if is_h: stk = st.session_state.hero_stack
         else:
             bot_key = f'bot_stack_{p}'
-            if bot_key not in st.session_state or st.session_state[bot_key] <= 0:
-                st.session_state[bot_key] = 100.0
+            if bot_key not in st.session_state or st.session_state[bot_key] <= 0: st.session_state[bot_key] = 100.0
             stk = st.session_state[bot_key]
             
         st.session_state.players.append({
-            'pos': p, 'name': 'HERO' if is_h else f"Bot_{p}",
-            'is_hero': is_h, 'stack': float(stk), 'bet': 0.0,
-            'cards': [st.session_state.deck.pop(), st.session_state.deck.pop()],
-            'active': True, 'acted_this_street': False
+            'pos': p, 'name': 'HERO' if is_h else f"Bot_{p}", 'is_hero': is_h,
+            'stack': float(stk), 'bet': 0.0, 'active': True, 'acted_this_street': False,
+            'cards': [st.session_state.deck.pop(), st.session_state.deck.pop()]
         })
         
     for pl in st.session_state.players:
@@ -141,8 +143,7 @@ def start_new_hand():
     process_bots_turn()
 
 def next_street():
-    for p in st.session_state.players: 
-        p['bet'] = 0.0; p['acted_this_street'] = False
+    for p in st.session_state.players: p['bet'] = 0.0; p['acted_this_street'] = False
     st.session_state.current_bet = 0.0
     st.session_state.turn_idx = 4
     st.session_state.hero_acted_this_street = False
@@ -178,33 +179,61 @@ def process_bots_turn():
                 max_allow = curr_p['stack'] + curr_p['bet']
                 roll = random.random()
                 
+                # --- AI 邏輯 ---
                 if st.session_state.street == 'PREFLOP':
-                    if st.session_state.current_bet == 1.0:
-                        if roll < 0.25:
+                    if st.session_state.current_bet == 1.0: # 無人加注
+                        if roll < 0.22: # Open Raise
                             r_amt = min(2.5, max_allow)
                             add = r_amt - curr_p['bet']
                             curr_p['stack'] -= add; curr_p['bet'] = r_amt; st.session_state.pot += add
                             st.session_state.current_bet = r_amt
-                            st.session_state.logs.append(f"🤖 {curr_p['pos']} 加注到 {r_amt:.1f} BB")
+                            st.session_state.logs.append(f"🤖 {curr_p['pos']} Open 到 {r_amt:.1f} BB")
+                        elif roll < 0.35: # Limp
+                            curr_p['stack'] -= to_call; curr_p['bet'] += to_call; st.session_state.pot += to_call
+                            st.session_state.logs.append(f"🤖 {curr_p['pos']} 平跟 (Call) 1.0 BB")
                         else:
                             if curr_p['pos'] == 'BB': st.session_state.logs.append(f"🤖 {curr_p['pos']} 過牌 (Check)")
                             else: curr_p['active'] = False; st.session_state.logs.append(f"🤖 {curr_p['pos']} 棄牌")
-                    else:
-                        if roll < 0.35:
+                    elif st.session_state.current_bet <= 5.0: # 面對一般 Open
+                        if roll < 0.12: # 3-Bet!
+                            r_amt = min(st.session_state.current_bet * 3, max_allow)
+                            add = r_amt - curr_p['bet']
+                            curr_p['stack'] -= add; curr_p['bet'] = r_amt; st.session_state.pot += add
+                            st.session_state.current_bet = r_amt
+                            st.session_state.logs.append(f"🔥 🤖 {curr_p['pos']} 3-Bet 加注到 {r_amt:.1f} BB!")
+                        elif roll < 0.35: # Call
                             curr_p['stack'] -= to_call; curr_p['bet'] += to_call; st.session_state.pot += to_call
                             st.session_state.logs.append(f"🤖 {curr_p['pos']} 跟注 {to_call:.1f} BB")
                         else:
                             curr_p['active'] = False; st.session_state.logs.append(f"🤖 {curr_p['pos']} 棄牌")
-                else:
+                    else: # 面對 3-Bet/4-Bet
+                        if roll < 0.10: # 4-Bet / All-in!
+                            r_amt = min(st.session_state.current_bet * 2.2, max_allow)
+                            add = r_amt - curr_p['bet']
+                            curr_p['stack'] -= add; curr_p['bet'] = r_amt; st.session_state.pot += add
+                            st.session_state.current_bet = r_amt
+                            st.session_state.logs.append(f"🚀 🤖 {curr_p['pos']} 4-Bet/All-in 到 {r_amt:.1f} BB!")
+                        elif roll < 0.25: # 艱難跟注
+                            curr_p['stack'] -= to_call; curr_p['bet'] += to_call; st.session_state.pot += to_call
+                            st.session_state.logs.append(f"🤖 {curr_p['pos']} 跟注 {to_call:.1f} BB")
+                        else:
+                            curr_p['active'] = False; st.session_state.logs.append(f"🤖 {curr_p['pos']} 棄牌")
+                else: # 翻後
                     if to_call == 0:
-                        if roll < 0.35:
+                        if roll < 0.35: # C-bet
                             b_amt = min(round(st.session_state.pot * 0.45, 1), curr_p['stack'])
                             curr_p['stack'] -= b_amt; curr_p['bet'] = b_amt; st.session_state.pot += b_amt
                             st.session_state.current_bet = b_amt
                             st.session_state.logs.append(f"🎯 🤖 {curr_p['pos']} 下注 {b_amt:.1f} BB")
                         else: st.session_state.logs.append(f"🤖 {curr_p['pos']} 過牌 (Check)")
                     else:
-                        if roll < 0.40:
+                        if roll < 0.08: # Raise
+                            r_amt = min(to_call * 2.5 + curr_p['bet'], max_allow)
+                            add = r_amt - curr_p['bet']
+                            curr_p['stack'] -= add; curr_p['bet'] = r_amt; st.session_state.pot += add
+                            st.session_state.current_bet = r_amt
+                            st.session_state.logs.append(f"🔥 🤖 {curr_p['pos']} 加注到 {r_amt:.1f} BB!")
+                        elif roll < 0.45: # Call
                             curr_p['stack'] -= to_call; curr_p['bet'] += to_call; st.session_state.pot += to_call
                             st.session_state.logs.append(f"🤖 {curr_p['pos']} 跟注 {to_call:.1f} BB")
                         else: curr_p['active'] = False; st.session_state.logs.append(f"🤖 {curr_p['pos']} 棄牌")
@@ -218,16 +247,11 @@ def process_bots_turn():
             next_street()
 
 # ==========================================
-# 4. 初始化與 Base64 SVG 渲染
+# 4. Base64 SVG 渲染
 # ==========================================
 st.set_page_config(page_title="GTO 競技教練", layout="centered")
-
-# 【關鍵修復】：確保第一把牌啟動前，變數已存在，徹底解決 KeyError！
-if 'hero_stack' not in st.session_state:
-    st.session_state.hero_stack = 100.0
-
-if 'street' not in st.session_state:
-    start_new_hand()
+if 'hero_stack' not in st.session_state: st.session_state.hero_stack = 100.0
+if 'street' not in st.session_state: start_new_hand()
 
 def draw_card(c, x, y):
     if not c: return ""
@@ -259,7 +283,6 @@ def draw_player(cx, cy, p):
     svg += '</g>'
     return svg
 
-# 將 SVG 轉為 Base64 圖片，徹底斷絕 Markdown 解析干擾！
 b_svg = "".join([draw_card(c, 400 - (len(st.session_state.board)*40)/2 + i*40, 210) for i, c in enumerate(st.session_state.board)])
 pos_map = {'UTG':(160,110), 'HJ':(400,70), 'CO':(640,110), 'BTN':(680,340), 'SB':(400,430), 'BB':(120,340)}
 p_svg = "".join([draw_player(pos_map[p['pos']][0], pos_map[p['pos']][1], p) for p in st.session_state.players])
@@ -269,9 +292,11 @@ b64_svg = base64.b64encode(full_svg_str.encode('utf-8')).decode('utf-8')
 st.markdown(f'<div style="text-align:center;"><img src="data:image/svg+xml;base64,{b64_svg}" style="width:100%; max-width:800px; border-radius:12px; box-shadow: 0 4px 12px rgba(0,0,0,0.5);"></div>', unsafe_allow_html=True)
 
 # ==========================================
-# 5. 操作面板與補充籌碼 (Rebuy)
+# 5. 操作面板與 GTO 頻率分析
 # ==========================================
 hero = next(p for p in st.session_state.players if p['is_hero'])
+active_count = len([p for p in st.session_state.players if p['active']])
+is_multiway = active_count > 2
 
 st.write("---")
 if st.session_state.street != 'SHOWDOWN' and hero['active'] and hero['stack'] > 0.01:
@@ -283,7 +308,6 @@ if st.session_state.street != 'SHOWDOWN' and hero['active'] and hero['stack'] > 
         st.caption("<br>".join(st.session_state.logs[-4:]), unsafe_allow_html=True)
 
     with col_action:
-        # --- 補充籌碼機制 ---
         c1, c2 = st.columns([1, 1])
         with c1: st.markdown(f"**🎮 輪到你行動** ({st.session_state.street})")
         with c2:
@@ -315,9 +339,9 @@ if st.session_state.street != 'SHOWDOWN' and hero['active'] and hero['stack'] > 
             cat = get_hand_category(hero['cards'])
             tex = evaluate_board_texture(st.session_state.board)
             if st.session_state.street == 'PREFLOP': st.session_state.gto_reports.append(analyze_gto_preflop(cat, hero['pos'], to_call, act == 'Bet / Raise'))
-            else: st.session_state.gto_reports.append(analyze_gto_postflop(st.session_state.street, c_val if act == 'Bet / Raise' else 0, st.session_state.pot, tex))
+            else: st.session_state.gto_reports.append(analyze_gto_postflop(st.session_state.street, c_val if act == 'Bet / Raise' else 0, st.session_state.pot, tex, is_multiway))
 
-            if act == 'Fold': hero['active'] = False; st.session_state.logs.append("👤 HERO 棄牌")
+            if act == 'Fold': hero['active'] = False; st.session_state.logs.append(f"👤 HERO 棄牌")
             elif 'Call' in act or 'Check' in act:
                 hero['stack'] -= to_call; hero['bet'] += to_call; st.session_state.pot += to_call
                 st.session_state.logs.append(f"👤 HERO {'過牌' if to_call == 0 else f'跟注 {to_call:.1f} BB'}")
@@ -340,7 +364,9 @@ elif st.session_state.street == 'SHOWDOWN' or not hero['active']:
     if 'winner_resolved' not in st.session_state:
         actives = [p for p in st.session_state.players if p['active']]
         if len(actives) > 1 and len(st.session_state.board) == 5:
-            best_s = -1; winners = []
+            # 【修復重點】：將 best_s 初始化為包含空 list 的 tuple，避免 TypeError 崩潰
+            best_s = (-1, [])
+            winners = []
             for p in actives:
                 s = get_hand_score(p['cards'] + st.session_state.board)
                 if s > best_s: best_s = s; winners = [p]

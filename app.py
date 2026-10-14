@@ -87,7 +87,7 @@ def classify_hero_postflop_hand(hero_cards, board):
     return "高牌空氣 (Air / Overcards)"
 
 # ==========================================
-# 2. 嚴謹 169 手牌精準 GTO 頻率分配庫 (Raise / Call / Fold)
+# 2. 169 手牌精準 GTO 頻率分配庫 (Raise / Call / Fold)
 # ==========================================
 def get_gto_breakdown(hand, pos):
     r1, r2 = hand[0], hand[1]
@@ -194,7 +194,6 @@ def get_gto_breakdown(hand, pos):
         return (0, 0, 100)
 
     elif pos == 'BB':
-        # 面對加注的大盲防守 (Raise=3-bet, Call=跟注防守, Fold=棄牌)
         if hand in ['AA', 'KK']: return (85, 15, 0)
         if hand in ['QQ', 'JJ', 'TT', 'AKs', 'AKo']: return (60, 40, 0)
         if is_pair and vh >= 6: return (20, 80, 0)
@@ -219,11 +218,21 @@ def get_gto_breakdown(hand, pos):
 
     return (0, 0, 100)
 
+# 使用純 CSS 處理放大與樣式，消除任何可能引發 SyntaxError 的 inline escape
 def generate_13x13_html(pos, hero_hand):
     ranks = ['A', 'K', 'Q', 'J', 'T', '9', '8', '7', '6', '5', '4', '3', '2']
     rv = lambda r: RANK_VALUES[r]
-    html = '<div style="display:grid; grid-template-columns:repeat(13, 1fr); gap:1.5px; background-color:#0d1117; padding:4px; border-radius:8px;">'
     
+    css = """
+    <style>
+      .matrix-grid { display:grid; grid-template-columns:repeat(13, 1fr); gap:2px; background-color:#0d1117; padding:4px; border-radius:8px; }
+      .matrix-cell { font-size:9.5px; font-family:monospace; font-weight:bold; text-align:center; padding:3.5px 0; border-radius:3px; cursor:pointer; text-shadow:0 1px 2px rgba(0,0,0,0.9); transition:transform 0.12s ease; border:1px solid rgba(255,255,255,0.08); color:#fff; }
+      .matrix-cell:hover { transform:scale(1.25) !important; z-index:50 !important; box-shadow:0 0 10px rgba(255,255,255,0.5); }
+      .matrix-hero { border:2px solid #f6e05e !important; box-shadow:0 0 8px #f6e05e; transform:scale(1.15); z-index:10; font-weight:900; }
+    </style>
+    """
+    
+    cells = []
     for r1 in ranks:
         for r2 in ranks:
             if rv(r1) > rv(r2): hand = r1 + r2 + 's'
@@ -232,7 +241,6 @@ def generate_13x13_html(pos, hero_hand):
             
             r_pct, c_pct, f_pct = get_gto_breakdown(hand, pos)
             
-            # 依據 GTO 頻率計算漸層背景
             if r_pct == 100: bg = "#e53e3e"
             elif f_pct == 100: bg = "#2d3748"
             elif c_pct == 100: bg = "#38a169"
@@ -241,24 +249,17 @@ def generate_13x13_html(pos, hero_hand):
                 p2 = r_pct + c_pct
                 bg = f"linear-gradient(to right, #e53e3e 0% {p1}%, #38a169 {p1}% {p2}%, #2d3748 {p2}% 100%)"
             
-            # 滑鼠懸停浮現的詳細百分比 Tooltip
-            if pos == 'BB':
-                title_text = f"【{hand}】&#10;🔥 3-Bet 加注: {r_pct}%&#10;🛡️ 跟注防守: {c_pct}%&#10;❌ 棄牌 (Fold): {f_pct}%"
-            else:
-                title_text = f"【{hand}】&#10;🔥 加注 (Raise): {r_pct}%&#10;🛡️ 平跟 (Call): {c_pct}%&#10;❌ 棄牌 (Fold): {f_pct}%"
+            title_text = f"【{hand}】&#10;🔥 加注: {r_pct}%&#10;🛡️ 跟注: {c_pct}%&#10;❌ 棄牌: {f_pct}%"
+            extra_class = " matrix-hero" if hand == hero_hand else ""
+            cells.append(f'<div class="matrix-cell{extra_class}" title="{title_text}" style="background:{bg};">{hand}</div>')
             
-            is_hero = (hand == hero_hand)
-            border = "border: 2px solid #f6e05e; color: #fff; z-index: 10; transform: scale(1.18); box-shadow: 0 0 8px #f6e05e; font-weight: 900;" if is_hero else "border: 1px solid rgba(255,255,255,0.08); color: #fff;"
-            
-            html += f'<div title="{title_text}" style="background:{bg}; {border} font-size:9.5px; font-family: monospace; font-weight:bold; text-align:center; padding:3px 0; border-radius:3px; cursor:pointer; text-shadow: 0 1px 2px rgba(0,0,0,0.9); transition: transform 0.1s;" onmouseover="this.style.transform=\'scale(1.22)\'; this.style.zIndex=\'20\';" onmouseout="this.style.transform=\'scale({\'1.18\' if is_hero else \'1.0\'})\'; this.style.zIndex=\'{\'10\' if is_hero else \'1\'}\';">{hand}</div>'
-            
-    html += '</div>'
-    html += f"""
+    html = css + '<div class="matrix-grid">' + "".join(cells) + '</div>'
+    html += """
     <div style="margin-top:8px; font-size:12px; color:#cbd5e0; line-height:1.6;">
       <span style="display:inline-block; width:12px; height:12px; background:#e53e3e; vertical-align:middle; border-radius:2px;"></span> <strong>加注 (Raise)</strong> &nbsp;&nbsp;
       <span style="display:inline-block; width:12px; height:12px; background:#38a169; vertical-align:middle; border-radius:2px;"></span> <strong>跟注 (Call)</strong> &nbsp;&nbsp;
       <span style="display:inline-block; width:12px; height:12px; background:#2d3748; vertical-align:middle; border-radius:2px;"></span> <strong>棄牌 (Fold)</strong><br>
-      💡 雙色/三色代表 <strong>GTO 混合頻率</strong>；<strong>滑鼠移到任意手牌上方即可浮現精確百分比</strong>。<br>
+      💡 雙色/三色代表 <strong>GTO 混合頻率</strong>；<strong>滑鼠懸停於任意手牌即可浮現精確百分比</strong>。<br>
       <span style="border:1px solid #f6e05e; padding:0 3px; color:#f6e05e; border-radius:2px;">黃框</span> 為高玩當前手牌。
     </div>
     """
@@ -613,7 +614,6 @@ with col_control:
                 st.caption(f"👉 實際行動：**{rec['action']}**")
             else:
                 h_type = classify_hero_postflop_hand(rec['hero_cards'], rec['board'])
-                texture = evaluate_board_texture(rec['board'])
                 st.markdown(f"**🔹 【{st_name}】** ({h_type})")
                 st.caption(f"👉 實際行動：**{rec['action']}** (下注量: {rec['bet_size']:.1f} BB)")
 

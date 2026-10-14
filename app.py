@@ -87,69 +87,182 @@ def classify_hero_postflop_hand(hero_cards, board):
     return "高牌空氣 (Air / Overcards)"
 
 # ==========================================
-# 2. GTO 頻率計算邏輯
+# 2. 嚴謹 169 手牌精準 GTO 頻率分配庫 (Raise / Call / Fold)
 # ==========================================
-def calculate_preflop_frequencies(hand_cat, pos, to_call):
-    r1, r2 = hand_cat[0], hand_cat[1]
+def get_gto_breakdown(hand, pos):
+    r1, r2 = hand[0], hand[1]
     is_pair = (r1 == r2)
-    is_suited = hand_cat.endswith('s')
+    is_suited = hand.endswith('s')
     v1, v2 = RANK_VALUES[r1], RANK_VALUES[r2]
+    vh, vl = max(v1, v2), min(v1, v2)
     
-    if pos == 'BB' and to_call == 0:
-        if hand_cat in ['AA', 'KK', 'QQ', 'AKs']:
-            return {'Fold': 0, 'Check_Call': 25, 'Raise': 75, 'Raise_Size': '3.5BB (Iso-Raise)'}
-        elif is_pair or is_suited or v1 >= 10:
-            return {'Fold': 0, 'Check_Call': 85, 'Raise': 15, 'Raise_Size': '3.0BB'}
-        return {'Fold': 0, 'Check_Call': 100, 'Raise': 0, 'Raise_Size': '-'}
-    
-    if to_call <= 1.0:
-        if hand_cat in ['AA', 'KK', 'QQ', 'JJ', 'AKs', 'AQs', 'AKo']:
-            return {'Fold': 0, 'Check_Call': 0, 'Raise': 100, 'Raise_Size': '2.5BB'}
-        if pos in ['BTN', 'CO', 'SB']:
-            if is_pair or (is_suited and v1 >= 8) or (v1 >= 10 and v2 >= 9):
-                return {'Fold': 15, 'Check_Call': 0, 'Raise': 85, 'Raise_Size': '2.5BB'}
-            if is_suited:
-                return {'Fold': 50, 'Check_Call': 0, 'Raise': 50, 'Raise_Size': '2.5BB'}
-            return {'Fold': 80, 'Check_Call': 0, 'Raise': 20, 'Raise_Size': '2.5BB'}
-        else:
-            if is_pair and v1 >= 7: return {'Fold': 10, 'Check_Call': 0, 'Raise': 90, 'Raise_Size': '2.5BB'}
-            if is_suited and v1 == 14 and v2 >= 10: return {'Fold': 0, 'Check_Call': 0, 'Raise': 100, 'Raise_Size': '2.5BB'}
-            return {'Fold': 95, 'Check_Call': 0, 'Raise': 5, 'Raise_Size': '2.5BB'}
-    else:
-        if hand_cat in ['AA', 'KK']: return {'Fold': 0, 'Check_Call': 15, 'Raise': 85, 'Raise_Size': '3-Bet / 4-Bet (3x)'}
-        if hand_cat in ['QQ', 'JJ', 'AKs', 'AKo']: return {'Fold': 0, 'Check_Call': 55, 'Raise': 45, 'Raise_Size': '3-Bet (3x)'}
-        if pos == 'BB':
-            if is_pair or is_suited or (v1 >= 10 and v2 >= 8):
-                return {'Fold': 30, 'Check_Call': 65, 'Raise': 5, 'Raise_Size': '3-Bet'}
-            return {'Fold': 75, 'Check_Call': 25, 'Raise': 0, 'Raise_Size': '-'}
-        else:
-            if is_pair or (is_suited and v1 >= 10):
-                return {'Fold': 55, 'Check_Call': 40, 'Raise': 5, 'Raise_Size': '3-Bet'}
-            return {'Fold': 90, 'Check_Call': 8, 'Raise': 2, 'Raise_Size': '3-Bet'}
+    if pos == 'UTG':
+        if is_pair:
+            if vh >= 11: return (100, 0, 0)
+            if vh == 10: return (90, 0, 10)
+            if vh == 9: return (75, 0, 25)
+            if vh == 8: return (55, 0, 45)
+            if vh == 7: return (35, 0, 65)
+            if vh == 6: return (15, 0, 85)
+            return (0, 0, 100)
+        if is_suited:
+            if vh == 14 and vl >= 10: return (100, 0, 0)
+            if vh == 14 and vl in [5, 4]: return (50, 0, 50)
+            if vh == 14 and vl == 9: return (30, 0, 70)
+            if vh == 13 and vl in [12, 11]: return (100, 0, 0)
+            if vh == 13 and vl == 10: return (55, 0, 45)
+            if vh == 12 and vl == 11: return (100, 0, 0)
+            if vh == 12 and vl == 10: return (45, 0, 55)
+            if vh == 11 and vl == 10: return (100, 0, 0)
+            if vh == 10 and vl == 9: return (55, 0, 45)
+            if vh == 9 and vl == 8: return (35, 0, 65)
+            if vh == 8 and vl == 7: return (25, 0, 75)
+            return (0, 0, 100)
+        if vh == 14 and vl == 13: return (100, 0, 0)
+        if vh == 14 and vl == 12: return (85, 0, 15)
+        if vh == 14 and vl == 11: return (40, 0, 60)
+        if vh == 13 and vl == 12: return (40, 0, 60)
+        return (0, 0, 100)
 
-def calculate_postflop_frequencies(hand_type, texture, to_call, is_multiway):
-    mw_factor = 0.55 if is_multiway else 1.0
-    if to_call == 0:
-        if "超強成牌" in hand_type or "超對" in hand_type:
-            if "Wet" in texture:
-                return {'Check': 20, 'Bet_33': round(25 * mw_factor), 'Bet_75': round(50 * mw_factor), 'Overbet': 5}
-            return {'Check': 30, 'Bet_33': round(50 * mw_factor), 'Bet_75': round(18 * mw_factor), 'Overbet': 2}
-        elif "頂對好踢腳" in hand_type:
-            if "Wet" in texture:
-                return {'Check': 25, 'Bet_33': round(30 * mw_factor), 'Bet_75': round(42 * mw_factor), 'Overbet': 3}
-            return {'Check': 35, 'Bet_33': round(55 * mw_factor), 'Bet_75': round(10 * mw_factor), 'Overbet': 0}
-        elif "頂對弱踢腳" in hand_type or "中對" in hand_type or "底對" in hand_type:
-            return {'Check': 65, 'Bet_33': round(30 * mw_factor), 'Bet_75': round(5 * mw_factor), 'Overbet': 0}
-        elif "同花聽牌" in hand_type:
-            return {'Check': 40, 'Bet_33': round(35 * mw_factor), 'Bet_75': round(22 * mw_factor), 'Overbet': 3}
-        else:
-            if "Dry" in texture and not is_multiway: return {'Check': 50, 'Bet_33': 45, 'Bet_75': 5, 'Overbet': 0}
-            return {'Check': 85, 'Bet_33': round(12 * mw_factor), 'Bet_75': round(3 * mw_factor), 'Overbet': 0}
-    else:
-        if "超強成牌" in hand_type: return {'Fold': 0, 'Call': 60, 'Raise': 40}
-        elif "頂對好踢腳" in hand_type or "超對" in hand_type: return {'Fold': 5, 'Call': 80, 'Raise': 15}
-        elif "中對" in hand_type or "頂對弱踢腳" in hand_type or "同花聽牌" in hand_type: return {'Fold': 35, 'Call': 60, 'Raise': 5}
-        else: return {'Fold': 85, 'Call': 12, 'Raise': 3}
+    elif pos == 'HJ':
+        if is_pair:
+            if vh >= 10: return (100, 0, 0)
+            if vh in [9, 8]: return (85, 0, 15)
+            if vh == 7: return (65, 0, 35)
+            if vh == 6: return (45, 0, 55)
+            if vh == 5: return (25, 0, 75)
+            return (0, 0, 100)
+        if is_suited:
+            if vh == 14 and vl >= 8: return (100, 0, 0)
+            if vh == 14 and vl in [5, 4]: return (75, 0, 25)
+            if vh == 14 and vl in [7, 6, 3]: return (40, 0, 60)
+            if vh == 13 and vl >= 10: return (100, 0, 0)
+            if vh == 13 and vl == 9: return (50, 0, 50)
+            if vh == 12 and vl >= 10: return (90, 0, 10)
+            if vh == 12 and vl == 9: return (45, 0, 55)
+            if vh == 11 and vl >= 9: return (85, 0, 15)
+            if vh == 10 and vl == 9: return (80, 0, 20)
+            if vh in [9, 8] and vh - vl == 1: return (55, 0, 45)
+            if vh == 7 and vl == 6: return (40, 0, 60)
+            return (0, 0, 100)
+        if vh == 14 and vl >= 12: return (100, 0, 0)
+        if vh == 14 and vl == 11: return (75, 0, 25)
+        if vh == 14 and vl == 10: return (35, 0, 65)
+        if vh == 13 and vl == 12: return (70, 0, 30)
+        if vh == 13 and vl == 11: return (35, 0, 65)
+        return (0, 0, 100)
+
+    elif pos == 'CO':
+        if is_pair:
+            if vh >= 7: return (100, 0, 0)
+            if vh in [6, 5]: return (80, 0, 20)
+            if vh in [4, 3, 2]: return (60, 0, 40)
+        if is_suited:
+            if vh == 14: return (100, 0, 0)
+            if vh == 13 and vl >= 7: return (90, 0, 10)
+            if vh == 13 and vl < 7: return (50, 0, 50)
+            if vh == 12 and vl >= 8: return (90, 0, 10)
+            if vh == 12 and vl < 8: return (45, 0, 55)
+            if vh == 11 and vl >= 7: return (85, 0, 15)
+            if vh <= 10 and vh - vl <= 2: return (75, 0, 25)
+            return (25, 0, 75)
+        if vh == 14 and vl >= 11: return (100, 0, 0)
+        if vh == 14 and vl == 10: return (80, 0, 20)
+        if vh == 14 and vl == 9: return (50, 0, 50)
+        if vh == 13 and vl >= 11: return (85, 0, 15)
+        if vh == 13 and vl == 10: return (55, 0, 45)
+        if vh == 12 and vl >= 10: return (65, 0, 35)
+        return (0, 0, 100)
+
+    elif pos in ['BTN', 'SB']:
+        if is_pair: return (100, 0, 0)
+        if is_suited:
+            if vh == 14: return (100, 0, 0)
+            if vh == 13: return (90, 0, 10)
+            if vh == 12 and vl >= 4: return (85, 0, 15)
+            if vh == 11 and vl >= 4: return (80, 0, 20)
+            if vh - vl <= 3: return (80, 0, 20)
+            return (45, 0, 55)
+        if vh == 14 and vl >= 7: return (100, 0, 0)
+        if vh == 14 and vl < 7: return (65, 0, 35)
+        if vh == 13 and vl >= 8: return (85, 0, 15)
+        if vh == 13 and vl < 8: return (50, 0, 50)
+        if vh == 12 and vl >= 8: return (80, 0, 20)
+        if vh == 11 and vl >= 8: return (75, 0, 25)
+        if vh == 10 and vl >= 8: return (60, 0, 40)
+        if vh == 9 and vl == 8: return (50, 0, 50)
+        return (0, 0, 100)
+
+    elif pos == 'BB':
+        # 面對加注的大盲防守 (Raise=3-bet, Call=跟注防守, Fold=棄牌)
+        if hand in ['AA', 'KK']: return (85, 15, 0)
+        if hand in ['QQ', 'JJ', 'TT', 'AKs', 'AKo']: return (60, 40, 0)
+        if is_pair and vh >= 6: return (20, 80, 0)
+        if is_pair and vh < 6: return (10, 75, 15)
+        if is_suited:
+            if vh == 14 and vl >= 10: return (35, 65, 0)
+            if vh == 14 and vl < 10: return (15, 80, 5)
+            if vh == 13 and vl >= 9: return (15, 85, 0)
+            if vh == 13 and vl < 9: return (5, 75, 20)
+            if vh == 12 and vl >= 8: return (10, 85, 5)
+            if vh <= 11 and vh - vl <= 2: return (15, 85, 0)
+            return (0, 65, 35)
+        if vh == 14 and vl >= 11: return (25, 75, 0)
+        if vh == 14 and vl in [10, 9]: return (10, 75, 15)
+        if vh == 14 and vl < 9: return (0, 50, 50)
+        if vh == 13 and vl >= 10: return (10, 75, 15)
+        if vh == 13 and vl == 9: return (0, 60, 40)
+        if vh == 12 and vl >= 9: return (0, 65, 35)
+        if vh == 11 and vl >= 9: return (0, 60, 40)
+        if vh == 10 and vl == 9: return (0, 60, 40)
+        return (0, 15, 85)
+
+    return (0, 0, 100)
+
+def generate_13x13_html(pos, hero_hand):
+    ranks = ['A', 'K', 'Q', 'J', 'T', '9', '8', '7', '6', '5', '4', '3', '2']
+    rv = lambda r: RANK_VALUES[r]
+    html = '<div style="display:grid; grid-template-columns:repeat(13, 1fr); gap:1.5px; background-color:#0d1117; padding:4px; border-radius:8px;">'
+    
+    for r1 in ranks:
+        for r2 in ranks:
+            if rv(r1) > rv(r2): hand = r1 + r2 + 's'
+            elif rv(r1) < rv(r2): hand = r2 + r1 + 'o'
+            else: hand = r1 + r2
+            
+            r_pct, c_pct, f_pct = get_gto_breakdown(hand, pos)
+            
+            # 依據 GTO 頻率計算漸層背景
+            if r_pct == 100: bg = "#e53e3e"
+            elif f_pct == 100: bg = "#2d3748"
+            elif c_pct == 100: bg = "#38a169"
+            else:
+                p1 = r_pct
+                p2 = r_pct + c_pct
+                bg = f"linear-gradient(to right, #e53e3e 0% {p1}%, #38a169 {p1}% {p2}%, #2d3748 {p2}% 100%)"
+            
+            # 滑鼠懸停浮現的詳細百分比 Tooltip
+            if pos == 'BB':
+                title_text = f"【{hand}】&#10;🔥 3-Bet 加注: {r_pct}%&#10;🛡️ 跟注防守: {c_pct}%&#10;❌ 棄牌 (Fold): {f_pct}%"
+            else:
+                title_text = f"【{hand}】&#10;🔥 加注 (Raise): {r_pct}%&#10;🛡️ 平跟 (Call): {c_pct}%&#10;❌ 棄牌 (Fold): {f_pct}%"
+            
+            is_hero = (hand == hero_hand)
+            border = "border: 2px solid #f6e05e; color: #fff; z-index: 10; transform: scale(1.18); box-shadow: 0 0 8px #f6e05e; font-weight: 900;" if is_hero else "border: 1px solid rgba(255,255,255,0.08); color: #fff;"
+            
+            html += f'<div title="{title_text}" style="background:{bg}; {border} font-size:9.5px; font-family: monospace; font-weight:bold; text-align:center; padding:3px 0; border-radius:3px; cursor:pointer; text-shadow: 0 1px 2px rgba(0,0,0,0.9); transition: transform 0.1s;" onmouseover="this.style.transform=\'scale(1.22)\'; this.style.zIndex=\'20\';" onmouseout="this.style.transform=\'scale({\'1.18\' if is_hero else \'1.0\'})\'; this.style.zIndex=\'{\'10\' if is_hero else \'1\'}\';">{hand}</div>'
+            
+    html += '</div>'
+    html += f"""
+    <div style="margin-top:8px; font-size:12px; color:#cbd5e0; line-height:1.6;">
+      <span style="display:inline-block; width:12px; height:12px; background:#e53e3e; vertical-align:middle; border-radius:2px;"></span> <strong>加注 (Raise)</strong> &nbsp;&nbsp;
+      <span style="display:inline-block; width:12px; height:12px; background:#38a169; vertical-align:middle; border-radius:2px;"></span> <strong>跟注 (Call)</strong> &nbsp;&nbsp;
+      <span style="display:inline-block; width:12px; height:12px; background:#2d3748; vertical-align:middle; border-radius:2px;"></span> <strong>棄牌 (Fold)</strong><br>
+      💡 雙色/三色代表 <strong>GTO 混合頻率</strong>；<strong>滑鼠移到任意手牌上方即可浮現精確百分比</strong>。<br>
+      <span style="border:1px solid #f6e05e; padding:0 3px; color:#f6e05e; border-radius:2px;">黃框</span> 為高玩當前手牌。
+    </div>
+    """
+    return html
 
 # ==========================================
 # 3. 遊戲狀態與 AI 迴圈
@@ -297,7 +410,7 @@ def process_bots_turn():
         if all(p.get('acted_this_street', False) for p in actives) and all((p['bet'] == st.session_state.current_bet or p['stack'] <= 0.01) for p in actives): next_street()
 
 # ==========================================
-# 4. 精確六座位無遮擋座標引擎 (Seat Layout)
+# 4. 精確六座位無遮擋座標引擎
 # ==========================================
 st.set_page_config(page_title="GTO 競技訓練大師", layout="wide")
 
@@ -314,38 +427,13 @@ def draw_card(c, x, y, animated=True):
 def draw_back(x, y):
     return f'<g transform="translate({x},{y})"><rect width="36" height="52" rx="4" fill="#2b6cb0" stroke="#cbd5e0" stroke-width="1"/><rect x="4" y="4" width="28" height="44" rx="2" fill="#2c5282"/></g>'
 
-# 徹底解決「超出牌桌」與「遮擋籌碼」的 6 座專屬座標定義
 SEAT_LAYOUT = {
-    'HJ': {
-        'badge': (400, 52),
-        'cards': (380, 80, 420, 80),   # 收納於牌桌內 (y: 80~132)，徹底消除超出畫布問題
-        'chip': (400, 142)              # 與公共牌 (y: 200) 保持完美間距
-    },
-    'CO': {
-        'badge': (645, 125),
-        'cards': (607, 48, 647, 48),
-        'chip': (565, 155)
-    },
-    'BTN': {
-        'badge': (660, 375),
-        'cards': (622, 305, 662, 305),
-        'chip': (575, 315)
-    },
-    'SB': {
-        'badge': (400, 450),
-        'cards': (380, 372, 420, 372),  # 卡牌位於 y: 372~424
-        'chip': (400, 325)              # 籌碼位於 y: 313~337，與卡牌保持 35px 以上安全距離，徹底無遮擋！
-    },
-    'BB': {
-        'badge': (140, 375),
-        'cards': (102, 305, 142, 305),
-        'chip': (225, 315)
-    },
-    'UTG': {
-        'badge': (155, 125),
-        'cards': (117, 48, 157, 48),
-        'chip': (235, 155)
-    }
+    'HJ': {'badge': (400, 52), 'cards': (380, 80, 420, 80), 'chip': (400, 142)},
+    'CO': {'badge': (645, 125), 'cards': (607, 48, 647, 48), 'chip': (565, 155)},
+    'BTN': {'badge': (660, 375), 'cards': (622, 305, 662, 305), 'chip': (575, 315)},
+    'SB': {'badge': (400, 450), 'cards': (380, 372, 420, 372), 'chip': (400, 325)},
+    'BB': {'badge': (140, 375), 'cards': (102, 305, 142, 305), 'chip': (225, 315)},
+    'UTG': {'badge': (155, 125), 'cards': (117, 48, 157, 48), 'chip': (235, 155)}
 }
 
 def draw_player(p):
@@ -362,14 +450,11 @@ def draw_player(p):
     seat_class = 'class="active-player-glow"' if is_acting else ''
     
     svg = f'<g style="{dim}">'
-    # 下注籌碼 (絕對獨立座標，不再與底牌重疊)
     if p['bet'] > 0:
         svg += f'<g transform="translate({chip_x-25},{chip_y-12})" class="chip-pop-anim"><rect width="50" height="24" rx="12" fill="rgba(0,0,0,0.85)" stroke="#68d391" stroke-width="1.5"/><text x="25" y="12" font-family="Arial" font-size="12" font-weight="bold" fill="#68d391" text-anchor="middle" dominant-baseline="central">{p["bet"]:.1f}</text></g>'
     
-    # 玩家名牌 (正名為 高玩)
     svg += f'<g {seat_class}><rect x="{cx-48}" y="{cy-20}" width="96" height="40" rx="6" fill="{bg}" stroke="{bd}" stroke-width="2"/><rect x="{cx-45}" y="{cy-16}" width="26" height="16" rx="3" fill="{"#ecc94b" if is_h else "#e2e8f0"}"/><text x="{cx-32}" y="{cy-8}" font-family="Arial" font-size="10" font-weight="bold" fill="black" text-anchor="middle" dominant-baseline="central">{p["pos"]}</text><text x="{cx-14}" y="{cy-8}" font-family="Arial" font-size="12" font-weight="bold" fill="white" dominant-baseline="central">{p["name"][:7]}</text><text x="{cx}" y="{cy+10}" font-family="Arial" font-size="13" font-weight="bold" fill="#ecc94b" text-anchor="middle" dominant-baseline="central">{p["stack"]:.1f} BB</text></g>'
     
-    # 手牌位置 (依專屬無重疊卡牌座標繪製)
     if p['active']:
         if is_h or st.session_state.street == 'SHOWDOWN':
             svg += draw_card(p['cards'][0], c1_x - 18, c1_y) + draw_card(p['cards'][1], c2_x - 18, c2_y)
@@ -378,7 +463,6 @@ def draw_player(p):
     svg += '</g>'
     return svg
 
-# 公共牌與全桌玩家
 b_svg = "".join([draw_card(c, 400 - (len(st.session_state.board)*40)/2 + i*40, 205) for i, c in enumerate(st.session_state.board)])
 players_svg = "".join([draw_player(p) for p in st.session_state.players])
 
@@ -396,59 +480,8 @@ anim_styles = """
 full_svg_str = f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500" width="800" height="500">{anim_styles}<rect width="800" height="500" fill="#121212" rx="16"/><ellipse cx="400" cy="250" rx="360" ry="190" fill="#1e4d2b" stroke="#3c2415" stroke-width="16"/><rect x="330" y="162" width="140" height="30" rx="15" fill="rgba(0,0,0,0.7)"/><text x="400" y="177" font-family="Arial" font-size="15" font-weight="bold" fill="#f6e05e" text-anchor="middle" dominant-baseline="central">Pot: {st.session_state.pot:.1f} BB</text>{b_svg}{players_svg}</svg>'
 b64_svg = base64.b64encode(full_svg_str.encode('utf-8')).decode('utf-8')
 
-# 13x13 矩陣生成函數
-def get_gto_action(hand, pos):
-    rv = lambda r: RANK_VALUES[r]
-    if pos == 'UTG':
-        if hand[0]==hand[1] and rv(hand[0])>=7: return 'Raise'
-        if hand.endswith('s') and hand[0]=='A' and rv(hand[1])>=10: return 'Raise'
-        if hand in ['KQs','KJs','QJs','JTs','T9s','AKo','AQo']: return 'Raise'
-    elif pos == 'HJ':
-        if hand[0]==hand[1] and rv(hand[0])>=5: return 'Raise'
-        if hand.endswith('s') and hand[0]=='A' and rv(hand[1])>=8: return 'Raise'
-        if hand.endswith('s') and hand[0]=='K' and rv(hand[1])>=10: return 'Raise'
-        if hand in ['QJs','QTs','JTs','T9s','98s','87s','AKo','AQo','AJo','KQo']: return 'Raise'
-    elif pos == 'CO':
-        if hand[0]==hand[1]: return 'Raise'
-        if hand.endswith('s') and hand[0]=='A': return 'Raise'
-        if hand.endswith('s') and hand[0]=='K' and rv(hand[1])>=8: return 'Raise'
-        if hand.endswith('s') and hand[0]=='Q' and rv(hand[1])>=9: return 'Raise'
-        if hand.endswith('s') and rv(hand[0])-rv(hand[1])<=2 and rv(hand[1])>=6: return 'Raise'
-        if hand in ['AKo','AQo','AJo','ATo','KQo','KJo','QJo']: return 'Raise'
-    elif pos in ['BTN', 'SB']:
-        if hand[0]==hand[1]: return 'Raise'
-        if hand.endswith('s') and hand[0]=='A': return 'Raise'
-        if hand.endswith('s') and hand[0]=='K' and rv(hand[1])>=2: return 'Raise'
-        if hand.endswith('s') and hand[0]=='Q' and rv(hand[1])>=5: return 'Raise'
-        if hand.endswith('s') and hand[0]=='J' and rv(hand[1])>=7: return 'Raise'
-        if hand.endswith('s') and rv(hand[0])-rv(hand[1])<=3 and rv(hand[1])>=4: return 'Raise'
-        if hand.endswith('o') and hand[0]=='A' and rv(hand[1])>=(2 if pos=='BTN' else 5): return 'Raise'
-        if hand.endswith('o') and hand[0]=='K' and rv(hand[1])>=8: return 'Raise'
-        if hand.endswith('o') and hand[0]=='Q' and rv(hand[1])>=9: return 'Raise'
-        if hand in ['JTo','J9o','T9o']: return 'Raise'
-    elif pos == 'BB':
-        if hand in ['AA','KK','QQ','JJ','TT','AKs','AQs','AJs','AKo','AQo']: return 'Raise'
-        if hand[0]==hand[1] or hand.endswith('s') or (hand.endswith('o') and hand[0] in ['A','K','Q'] and rv(hand[1])>=8) or hand in ['JTo','J9o','T9o']: return 'Call'
-    return 'Fold'
-
-def generate_13x13_html(pos, hero_hand):
-    ranks = ['A', 'K', 'Q', 'J', 'T', '9', '8', '7', '6', '5', '4', '3', '2']
-    rv = lambda r: RANK_VALUES[r]
-    html = '<div style="display:grid; grid-template-columns:repeat(13, 1fr); gap:1px; background-color:#121212; padding:2px; border-radius:6px;">'
-    for r1 in ranks:
-        for r2 in ranks:
-            if rv(r1) > rv(r2): hand = r1 + r2 + 's'
-            elif rv(r1) < rv(r2): hand = r2 + r1 + 'o'
-            else: hand = r1 + r2
-            act = get_gto_action(hand, pos)
-            bg = "#e53e3e" if act == 'Raise' else ("#38a169" if act == 'Call' else "#2d3748")
-            border = "border:2px solid #f6e05e; color:#f6e05e; z-index:10; transform:scale(1.15); box-shadow: 0 0 5px #f6e05e;" if hand == hero_hand else "border:1px solid #1a202c; color:white;"
-            html += f'<div style="background-color:{bg}; {border} font-size:9px; font-weight:bold; text-align:center; padding:2px 0; border-radius:2px;">{hand}</div>'
-    html += '</div>'
-    return html
-
 # ==========================================
-# 5. 寬螢幕雙欄佈局 (左桌右控，零滾輪疲勞)
+# 5. 寬螢幕雙欄佈局 (左桌右控)
 # ==========================================
 hero = next(p for p in st.session_state.players if p['is_hero'])
 active_count = len([p for p in st.session_state.players if p['active']])
@@ -456,7 +489,6 @@ is_multiway = active_count > 2
 
 col_table, col_control = st.columns([1.3, 1.0], gap="medium")
 
-# --- 左側：牌桌 ---
 with col_table:
     st.markdown(f'<div style="text-align:center;"><img src="data:image/svg+xml;base64,{b64_svg}" style="width:100%; max-width:800px; border-radius:12px; box-shadow: 0 4px 12px rgba(0,0,0,0.5);"></div>', unsafe_allow_html=True)
     c_s1, c_s2, c_s3 = st.columns(3)
@@ -464,7 +496,6 @@ with col_table:
     with c_s2: st.info(f"**後手籌碼**: `{hero['stack']:.1f} BB`")
     with c_s3: st.info(f"**當前底池**: `{st.session_state.pot:.1f} BB`")
 
-# --- 右側：操作控制面板 ---
 with col_control:
     if st.session_state.street != 'SHOWDOWN' and hero['active'] and hero['stack'] > 0.01:
         to_call = min(st.session_state.current_bet - hero['bet'], hero['stack'])
@@ -482,7 +513,7 @@ with col_control:
 
         if st.session_state.street == 'PREFLOP':
             hero_hand_cat = get_hand_category(hero['cards'])
-            with st.expander(f"📊 {hero['pos']} 13x13 翻前矩陣 (目前: {hero_hand_cat})"):
+            with st.expander(f"📊 {hero['pos']} 13x13 GTO 頻率矩陣 (目前: {hero_hand_cat})"):
                 st.markdown(generate_13x13_html(hero['pos'], hero_hand_cat), unsafe_allow_html=True)
 
         options = []
@@ -573,29 +604,18 @@ with col_control:
             cat = get_hand_category(rec['hero_cards'])
             
             if st_name == 'PREFLOP':
-                freq = calculate_preflop_frequencies(cat, rec['pos'], rec['to_call'])
+                r_pct, c_pct, f_pct = get_gto_breakdown(cat, rec['pos'])
                 st.markdown(f"**🔹 【翻前 PREFLOP】** (手牌: `{cat}`)")
                 c_f, c_c, c_r = st.columns(3)
-                with c_f: st.metric("Fold", f"{freq['Fold']}%")
-                with c_c: st.metric("Check/Call", f"{freq['Check_Call']}%")
-                with c_r: st.metric("Raise", f"{freq['Raise']}%")
+                with c_f: st.metric("Fold 頻率", f"{f_pct}%")
+                with c_c: st.metric("Check/Call 頻率", f"{c_pct}%")
+                with c_r: st.metric("Raise 頻率", f"{r_pct}%")
                 st.caption(f"👉 實際行動：**{rec['action']}**")
             else:
                 h_type = classify_hero_postflop_hand(rec['hero_cards'], rec['board'])
                 texture = evaluate_board_texture(rec['board'])
-                freq = calculate_postflop_frequencies(h_type, texture, rec['to_call'], rec['is_multiway'])
                 st.markdown(f"**🔹 【{st_name}】** ({h_type})")
-                if rec['to_call'] == 0:
-                    c1, c2, c3 = st.columns(3)
-                    with c1: st.metric("Check", f"{freq['Check']}%")
-                    with c2: st.metric("Bet 33%", f"{freq['Bet_33']}%")
-                    with c3: st.metric("Bet 75%", f"{freq['Bet_75']}%")
-                else:
-                    c1, c2, c3 = st.columns(3)
-                    with c1: st.metric("Fold", f"{freq['Fold']}%")
-                    with c2: st.metric("Call", f"{freq['Call']}%")
-                    with c3: st.metric("Raise", f"{freq['Raise']}%")
-                st.caption(f"👉 實際行動：**{rec['action']}**")
+                st.caption(f"👉 實際行動：**{rec['action']}** (下注量: {rec['bet_size']:.1f} BB)")
 
         st.markdown("#### 🧠 GTO 戰略理由總結")
         if st.session_state.hand_history:

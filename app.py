@@ -188,60 +188,70 @@ st.markdown(table_svg, unsafe_allow_html=True)
 # 5. 手機友善操控面板
 # ==========================================
 st.write("---")
+# ==========================================
+# 5. 緊湊分欄操作面板 (選項二)
+# ==========================================
 hand_cat = get_hand_category(st.session_state.hero_cards[0], st.session_state.hero_cards[1])
 texture = evaluate_board_texture(st.session_state.board)
 
-if st.session_state.stage == 'PREFLOP':
-    st.subheader(f"🎮 翻前行動 (位置: {st.session_state.hero_pos})")
-    action = st.radio("你的決策:", ['Fold', 'Call (1.0 BB)', 'Open Raise'])
-    
-    raise_val = 2.5
-    if action == 'Open Raise':
-        raise_val = st.slider("加注尺寸 (BB):", 2.0, 10.0, 2.5, 0.5)
+# 建立分欄：左欄留白(或縮小比例)，右欄放操作面板。
+# 因為上方的 SVG 已經用 st.markdown 置中顯示，我們這裡用 columns 將按鈕推到合適的位置
+col_empty, col_controls = st.columns([1, 9]) # 讓操作面板佔據主要寬度，但稍微內縮
 
-    if st.button("確認行動", type="primary", use_container_width=True):
-        st.session_state.reports.append(analyze_preflop_gto(hand_cat, st.session_state.hero_pos))
+with col_controls:
+    if st.session_state.stage == 'PREFLOP':
+        st.markdown(f"**🎮 翻前行動** (位置: {st.session_state.hero_pos})")
         
-        if action == 'Fold':
-            st.session_state.stage = 'SHOWDOWN'
-        else:
-            cost = 1.0 if 'Call' in action else raise_val
-            st.session_state.hero_stack -= cost
-            st.session_state.pot += cost
-            st.session_state.hero_bet = cost
-            st.session_state.board = [st.session_state.deck.pop(), st.session_state.deck.pop(), st.session_state.deck.pop()]
-            st.session_state.stage = 'FLOP'
-        st.rerun()
+        # 將單選按鈕改成水平排列，節省垂直空間
+        action = st.radio("你的決策:", ['Fold', 'Call (1.0 BB)', 'Open Raise'], horizontal=True)
+        
+        raise_val = 2.5
+        if action == 'Open Raise':
+            raise_val = st.slider("加注尺寸 (BB):", 2.0, 10.0, 2.5, 0.5)
 
-elif st.session_state.stage == 'FLOP':
-    st.subheader(f"🎮 翻牌圈 (牌面: {texture})")
-    action = st.radio("你的決策:", ['Check', 'C-bet 下注'])
-    
-    cbet_val = 0.0
-    if action == 'C-bet 下注':
-        max_bet = min(st.session_state.hero_stack, st.session_state.pot * 2.5)
-        cbet_val = st.slider("選擇 C-bet 尺寸 (左右滑動):", 1.0, float(max_bet), round(st.session_state.pot * 0.33, 1), 0.5)
-        st.caption(f"⚡ 目前尺寸約為底池的 **{(cbet_val/st.session_state.pot)*100:.0f}%**")
-
-    if st.button("確認行動並看 GTO 分析", type="primary", use_container_width=True):
-        if action == 'C-bet 下注':
-            st.session_state.hero_stack -= cbet_val
-            st.session_state.pot += cbet_val
-            st.session_state.hero_bet = cbet_val
-            st.session_state.reports.extend(analyze_postflop_gto(cbet_val, st.session_state.pot - cbet_val, texture))
-        else:
-            st.session_state.hero_bet = 0.0
-            st.session_state.reports.append("🛡️ **Check 評估**: 控制底池符合 GTO。無堅果優勢時，過牌是標準防守。")
+        if st.button("確認行動", type="primary", use_container_width=True):
+            st.session_state.reports.append(analyze_preflop_gto(hand_cat, st.session_state.hero_pos))
             
-        st.session_state.stage = 'SHOWDOWN'
-        st.rerun()
+            if action == 'Fold':
+                st.session_state.stage = 'SHOWDOWN'
+            else:
+                cost = 1.0 if 'Call' in action else raise_val
+                st.session_state.hero_stack -= cost
+                st.session_state.pot += cost
+                st.session_state.hero_bet = cost
+                st.session_state.board = [st.session_state.deck.pop(), st.session_state.deck.pop(), st.session_state.deck.pop()]
+                st.session_state.stage = 'FLOP'
+            st.rerun()
 
-elif st.session_state.stage == 'SHOWDOWN':
-    st.success("✅ **牌局分析報告**")
-    for r in st.session_state.reports:
-        st.markdown(r)
-    
-    if st.button("下一手牌", type="primary", use_container_width=True):
-        st.session_state.hero_stack += st.session_state.pot
-        start_hand()
-        st.rerun()
+    elif st.session_state.stage == 'FLOP':
+        st.markdown(f"**🎮 翻牌圈** (牌面: {texture})")
+        action = st.radio("你的決策:", ['Check', 'C-bet 下注'], horizontal=True)
+        
+        cbet_val = 0.0
+        if action == 'C-bet 下注':
+            max_bet = min(st.session_state.hero_stack, st.session_state.pot * 2.5)
+            cbet_val = st.slider("選擇 C-bet 尺寸:", 1.0, float(max_bet), round(st.session_state.pot * 0.33, 1), 0.5)
+            st.caption(f"⚡ 約為底池的 {(cbet_val/st.session_state.pot)*100:.0f}%")
+
+        if st.button("確認行動並看 GTO 分析", type="primary", use_container_width=True):
+            if action == 'C-bet 下注':
+                st.session_state.hero_stack -= cbet_val
+                st.session_state.pot += cbet_val
+                st.session_state.hero_bet = cbet_val
+                st.session_state.reports.extend(analyze_postflop_gto(cbet_val, st.session_state.pot - cbet_val, texture))
+            else:
+                st.session_state.hero_bet = 0.0
+                st.session_state.reports.append("🛡️ **Check 評估**: 控制底池符合 GTO。無堅果優勢時，過牌是標準防守。")
+                
+            st.session_state.stage = 'SHOWDOWN'
+            st.rerun()
+
+    elif st.session_state.stage == 'SHOWDOWN':
+        st.markdown("**✅ 牌局分析報告**")
+        for r in st.session_state.reports:
+            st.markdown(r)
+        
+        if st.button("下一手牌", type="primary", use_container_width=True):
+            st.session_state.hero_stack += st.session_state.pot
+            start_hand()
+            st.rerun()

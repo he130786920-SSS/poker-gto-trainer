@@ -106,13 +106,21 @@ def start_new_hand():
     st.session_state.btn_idx = (st.session_state.get('btn_idx', 0) + 1) % 6
     st.session_state.hero_pos = POS_LIST[st.session_state.btn_idx]
     
-    if st.session_state.get('hero_stack', 100.0) <= 0: st.session_state.hero_stack = 100.0
+    # 破產自動補滿機制
+    if st.session_state.hero_stack <= 0: 
+        st.session_state.hero_stack = 100.0
         
     st.session_state.players = []
     for p in POS_LIST:
         is_h = (p == st.session_state.hero_pos)
-        stk = st.session_state.hero_stack if is_h else st.session_state.get(f'bot_stack_{p}', 100.0)
-        if stk <= 0: stk = 100.0
+        if is_h:
+            stk = st.session_state.hero_stack
+        else:
+            bot_key = f'bot_stack_{p}'
+            if bot_key not in st.session_state or st.session_state[bot_key] <= 0:
+                st.session_state[bot_key] = 100.0
+            stk = st.session_state[bot_key]
+            
         st.session_state.players.append({
             'pos': p, 'name': 'HERO' if is_h else f"Bot_{p}",
             'is_hero': is_h, 'stack': float(stk), 'bet': 0.0,
@@ -210,10 +218,16 @@ def process_bots_turn():
             next_street()
 
 # ==========================================
-# 4. Base64 SVG 渲染 (100% 絕對防跑版技術)
+# 4. 初始化與 Base64 SVG 渲染
 # ==========================================
 st.set_page_config(page_title="GTO 競技教練", layout="centered")
-if 'hero_stack' not in st.session_state: start_new_hand()
+
+# 【關鍵修復】：確保第一把牌啟動前，變數已存在，徹底解決 KeyError！
+if 'hero_stack' not in st.session_state:
+    st.session_state.hero_stack = 100.0
+
+if 'street' not in st.session_state:
+    start_new_hand()
 
 def draw_card(c, x, y):
     if not c: return ""
@@ -269,7 +283,7 @@ if st.session_state.street != 'SHOWDOWN' and hero['active'] and hero['stack'] > 
         st.caption("<br>".join(st.session_state.logs[-4:]), unsafe_allow_html=True)
 
     with col_action:
-        # --- 新增：補充籌碼機制 ---
+        # --- 補充籌碼機制 ---
         c1, c2 = st.columns([1, 1])
         with c1: st.markdown(f"**🎮 輪到你行動** ({st.session_state.street})")
         with c2:

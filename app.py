@@ -4,7 +4,7 @@ import itertools
 from collections import Counter
 
 # ==========================================
-# 1. 撲克底層引擎 (Cards & Evaluator)
+# 1. 撲克底層算法 (Pure Python)
 # ==========================================
 SUITS = ['♠', '♥', '♦', '♣']
 RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A']
@@ -13,62 +13,6 @@ RANK_VALUES = {r: i for i, r in enumerate(RANKS, start=2)}
 def create_deck():
     return [r + s for r in RANKS for s in SUITS]
 
-def evaluate_5card(hand):
-    """計算 5 張牌的強度分數 (分數越高牌力越大)"""
-    ranks = sorted([RANK_VALUES[card[:-1]] for card in hand], reverse=True)
-    suits = [card[-1] for card in hand]
-    
-    is_flush = len(set(suits)) == 1
-    
-    # 順子判斷 (考慮 A-2-3-4-5 輪轉順)
-    unique_ranks = sorted(list(set(ranks)), reverse=True)
-    is_straight = False
-    straight_high = 0
-    if len(unique_ranks) >= 5:
-        for i in range(len(unique_ranks) - 4):
-            if unique_ranks[i] - unique_ranks[i+4] == 4:
-                is_straight = True
-                straight_high = unique_ranks[i]
-                break
-        if not is_straight and set([14, 2, 3, 4, 5]).issubset(set(ranks)):
-            is_straight = True
-            straight_high = 5
-            
-    rank_counts = Counter(ranks)
-    counts = sorted(rank_counts.values(), reverse=True)
-    counts_ranks = sorted(rank_counts.keys(), key=lambda r: (rank_counts[r], r), reverse=True)
-    
-    # 牌型等級：8: 同花順, 7: 四條, 6: 葫蘆, 5: 同花, 4: 順子, 3: 三條, 2: 兩對, 1: 一對, 0: 高牌
-    if is_straight and is_flush:
-        return (8, straight_high)
-    if counts == [4, 1]:
-        return (7, counts_ranks)
-    if counts == [3, 2]:
-        return (6, counts_ranks)
-    if is_flush:
-        return (5, ranks)
-    if is_straight:
-        return (4, straight_high)
-    if counts == [3, 1, 1]:
-        return (3, counts_ranks)
-    if counts == [2, 2, 1]:
-        return (2, counts_ranks)
-    if counts == [2, 1, 1, 1]:
-        return (1, counts_ranks)
-    return (0, ranks)
-
-def evaluate_best_hand(cards):
-    """從 7 張牌選出最強 5 張組合"""
-    best_score = (-1, [])
-    for comb in itertools.combinations(cards, 5):
-        score = evaluate_5card(comb)
-        if score > best_score:
-            best_score = score
-    return best_score
-
-# ==========================================
-# 2. GTO 矩陣與理論分析引擎
-# ==========================================
 def get_hand_category(card1, card2):
     r1, s1 = card1[:-1], card1[-1]
     r2, s2 = card2[:-1], card2[-1]
@@ -78,7 +22,24 @@ def get_hand_category(card1, card2):
     suited = 's' if s1 == s2 else 'o'
     return high + low + ('' if high == low else suited)
 
-# 6-Max No-Rake 100BB 標準開牌範圍基準線 (越早位置越緊)
+def evaluate_board_texture(board):
+    if len(board) < 3:
+        return "Preflop"
+    ranks = [RANK_VALUES[c[:-1]] for c in board]
+    suits = [c[-1] for c in board]
+    is_monotone = len(set(suits[:3])) == 1
+    is_paired = len(set(ranks[:3])) < 3
+    span = max(ranks[:3]) - min(ranks[:3])
+    
+    if is_paired:
+        return "Paired Board (對子面)"
+    if is_monotone:
+        return "Monotone (單色面)"
+    if span <= 4:
+        return "Wet / Dynamic (濕滑動態面)"
+    return "Dry / Static (乾燥乾燥面)"
+
+# 6-Max No-Rake 100BB GTO 開牌基準線
 GTO_OPEN_STANDARDS = {
     'UTG': {'pairs': 7, 'suited_ax': 10, 'broadway_off': ['AKo', 'AQo', 'AJo', 'KQo'], 'connectors': ['JTs', 'T9s', '98s']},
     'HJ':  {'pairs': 5, 'suited_ax': 6,  'broadway_off': ['AKo', 'AQo', 'AJo', 'ATo', 'KQo', 'KJo'], 'connectors': ['JTs', 'T9s', '98s', '87s']},
@@ -94,279 +55,299 @@ def analyze_preflop_gto(hand_cat, position):
     is_suited = hand_cat.endswith('s')
     
     if is_pair:
-        pair_val = RANK_VALUES[r1]
-        if pair_val >= std['pairs']:
-            return "✅ **GTO 建議**: 100% Open Raise (具備純價值與攤牌勝率)。"
-        return "⚠️ **GTO 建議**: 棄牌 (邊緣口袋對子，此位置易被身後加注施壓)。"
-    
-    if is_suited and r1 == 'A':
-        k_val = RANK_VALUES[r2]
-        if k_val >= std['suited_ax']:
-            return "✅ **GTO 建議**: 100% Open Raise (同花 A 具備強大 Nuts 潛力與阻擋牌效果)。"
-    
+        if RANK_VALUES[r1] >= std['pairs']:
+            return "✅ **GTO 翻前評估**: 100% 頻率 Open Raise（具備絕佳純價值與強大攤牌勝率）。"
+        return "⚠️ **GTO 翻前評估**: 邊緣口袋對子。在早中位容易遭遇 3-Bet 壓縮，建議棄牌或混合極低頻率防守。"
+    if is_suited and r1 == 'A' and RANK_VALUES[r2] >= std['suited_ax']:
+        return "✅ **GTO 翻前評估**: 100% Open Raise（同花 A 具備強大阻擋牌與 Nuts 同花潛力）。"
     if hand_cat in std['broadway_off'] or hand_cat in std.get('connectors', []):
-        return "✅ **GTO 建議**: 標準 Open Raise (此位置的動態防守/價值範圍)。"
-        
-    return "❌ **GTO 建議**: Fold (在 100BB 無抽水環境下，該起手牌在該位置期望值為負)。"
+        return "✅ **GTO 翻前評估**: 標準 Open Raise 範圍。"
+    return "❌ **GTO 翻前評估**: 純負 EV 牌型，理論標準直接 Fold。"
 
-def evaluate_board_texture(board):
-    if len(board) < 3:
-        return "Preflop"
-    ranks = [RANK_VALUES[c[:-1]] for c in board]
-    suits = [c[-1] for c in board]
-    
-    is_monotone = len(set(suits[:3])) == 1
-    is_paired = len(set(ranks[:3])) < 3
-    span = max(ranks[:3]) - min(ranks[:3])
-    
-    if is_paired:
-        return "Paired Board (對子面)"
-    if is_monotone:
-        return "Monotone (單色面)"
-    if span <= 4:
-        return "Wet / Connected (濕滑動態面)"
-    return "Dry / Disconnected (乾燥乾燥面)"
+def analyze_postflop_gto_slider(custom_bet, pot, board_texture):
+    pct = (custom_bet / pot) * 100 if pot > 0 else 0
+    feedback = []
+    feedback.append(f"🎯 **你的實際下注**: **{custom_bet:.1f} BB**（相當於 **{pct:.1f}% 底池**）")
+
+    # GTO 尺度吸附四捨五入算法
+    if pct <= 45:
+        target = "33% 底池 (小尺寸)"
+        feedback.append(f"📌 **GTO 基準錨定**: 最接近 **{target}**。")
+        if "Dry" in board_texture:
+            feedback.append("💡 **理論解讀**: **非常優秀**。在乾燥面（如 K-8-2r），翻前進攻者擁有極高勝率優勢，GTO 建議用 25%-33% 的高頻率下注持續施壓邊緣牌。")
+        else:
+            feedback.append("⚠️ **理論解讀**: **尺寸偏小**。在濕滑動態面（如 J-T-8 雙花），小下注給予了對手高達 1:4 以上的極佳買牌賠率，難以保護你的價值範圍。")
+    elif pct <= 90:
+        target = "67% - 75% 底池 (標準大尺寸)"
+        feedback.append(f"📌 **GTO 基準錨定**: 最接近 **{target}**。")
+        if "Wet" in board_texture:
+            feedback.append("💡 **理論解讀**: **非常優秀**。濕滑牌面需要使用 66%-75% 尺寸建立『堅果保護』，既能剝奪對手追花追順的隱含賠率，又能最大化強成牌的價值。")
+        else:
+            feedback.append("⚠️ **理論解讀**: **略微過大**。在乾燥面上不需要如此昂貴的保護，過大尺寸會把對手所有的弱牌打蓋，只留下比你強的牌跟注。")
+    else:
+        target = "125%+ 底池 (超池 Overbet)"
+        feedback.append(f"📌 **GTO 基準錨定**: 最接近 **{target}**。")
+        feedback.append("💡 **理論解讀**: **極化打法（Polarized Strategy）**。GTO 只會在你在牌面具有顯著『堅果優勢（Nut Advantage）』時才進行超池下注。如果對手是個棄牌率極高的緊弱玩家（Nit），這也是個高收益的剝削型詐唬尺寸！")
+
+    return feedback
 
 # ==========================================
-# 3. 擬真隨機偏離機器人 (Realistic Bots)
+# 2. 擬真隨機偏離機器人 (Realistic Bots)
 # ==========================================
 class RealisticBot:
     def __init__(self, name, archetype, stack=100):
         self.name = name
         self.archetype = archetype
-        self.stack = stack
-        # 加入高斯隨機擾動，避免行為固定被抓馬腳
-        jitter = lambda: random.uniform(-0.06, 0.06)
-        
-        if archetype == 'TAG (緊兇-常客)':
-            self.vpip = max(0.16, min(0.24, 0.20 + jitter()))
-            self.pfr = max(0.14, min(self.vpip, 0.17 + jitter()))
-            self.fold_to_cbet = max(0.40, min(0.55, 0.46 + jitter()))
-            self.aggression = 0.65
-        elif archetype == 'LAG (鬆兇-常客)':
-            self.vpip = max(0.26, min(0.35, 0.29 + jitter()))
-            self.pfr = max(0.22, min(self.vpip, 0.25 + jitter()))
-            self.fold_to_cbet = max(0.32, min(0.45, 0.38 + jitter()))
-            self.aggression = 0.80
-        elif archetype == 'Calling Station (跟注站)':
-            self.vpip = max(0.38, min(0.55, 0.45 + jitter()))
-            self.pfr = max(0.05, min(0.12, 0.08 + jitter()))
-            self.fold_to_cbet = max(0.15, min(0.28, 0.20 + jitter()))
-            self.aggression = 0.25
-        elif archetype == 'Nit (石頭人)':
-            self.vpip = max(0.10, min(0.15, 0.12 + jitter()))
-            self.pfr = max(0.08, min(self.vpip, 0.10 + jitter()))
-            self.fold_to_cbet = max(0.60, min(0.75, 0.68 + jitter()))
-            self.aggression = 0.35
-        else: # Maniac (狂人)
-            self.vpip = max(0.45, min(0.65, 0.52 + jitter()))
-            self.pfr = max(0.35, min(self.vpip, 0.42 + jitter()))
-            self.fold_to_cbet = max(0.20, min(0.35, 0.25 + jitter()))
-            self.aggression = 0.90
-
-    def decide_preflop(self, hand_cat, position, current_bet):
-        roll = random.random()
-        if current_bet <= 1.0: # 未面臨加注
-            if roll < self.pfr:
-                return "Raise", 2.5
-            elif roll < self.vpip:
-                return "Call", 1.0
-            return "Fold", 0
-        else:
-            if roll < (self.vpip * 0.45):
-                return "Call", current_bet
-            elif roll < (self.pfr * 0.25) and self.aggression > 0.6:
-                return "Raise", current_bet * 3
-            return "Fold", 0
-
-    def decide_postflop(self, pot, facing_bet):
-        roll = random.random()
-        if facing_bet == 0:
-            if roll < self.aggression * 0.65:
-                # 隨機化下注尺寸 (33% 或 67%)
-                size = round(pot * (0.33 if random.random() > 0.5 else 0.67), 1)
-                return "Bet", max(size, 1.0)
-            return "Check", 0
-        else:
-            if roll < self.fold_to_cbet:
-                return "Fold", 0
-            if roll < (1.0 - self.fold_to_cbet) * 0.8:
-                return "Call", facing_bet
-            return "Raise", facing_bet * 2.8
+        self.stack = float(stack)
+        self.current_bet = 0.0
+        jitter = lambda: random.uniform(-0.05, 0.05)
+        if 'TAG' in archetype:
+            self.vpip, self.agg = 0.20 + jitter(), 0.65
+        elif 'LAG' in archetype:
+            self.vpip, self.agg = 0.30 + jitter(), 0.80
+        elif 'Station' in archetype:
+            self.vpip, self.agg = 0.45 + jitter(), 0.20
+        elif 'Nit' in archetype:
+            self.vpip, self.agg = 0.12 + jitter(), 0.30
+        else: # Maniac
+            self.vpip, self.agg = 0.50 + jitter(), 0.90
 
 # ==========================================
-# 4. Streamlit 介面與動態流程管理
+# 3. 牌局 Session 狀態控管
 # ==========================================
-st.set_page_config(page_title="6-Max GTO Poker Trainer", layout="wide", page_icon="♠️")
+st.set_page_config(page_title="GTO 擬真撲克競技訓練器", layout="wide", page_icon="♠️")
 
-POSITIONS_6MAX = ['UTG', 'HJ', 'CO', 'BTN', 'SB', 'BB']
+POSITIONS = ['UTG', 'HJ', 'CO', 'BTN', 'SB', 'BB']
 
-if 'initialized' not in st.session_state:
-    st.session_state.initialized = True
-    st.session_state.button_index = 0
+if 'hand_count' not in st.session_state:
     st.session_state.hand_count = 1
-    
-    # 初始化 6 位玩家 (1 位 Hero + 5 位擬真機器人)
+    st.session_state.btn_pos_idx = 0
+    st.session_state.hero_stack = 100.0
+    st.session_state.hero_current_bet = 0.0
     st.session_state.bots = [
-        RealisticBot("Bot 1 (HJ)", 'TAG (緊兇-常客)', 100),
-        RealisticBot("Bot 2 (CO)", 'LAG (鬆兇-常客)', 100),
-        RealisticBot("Bot 3 (BTN)", 'Calling Station (跟注站)', 100),
-        RealisticBot("Bot 4 (SB)", 'Nit (石頭人)', 100),
-        RealisticBot("Bot 5 (BB)", 'Maniac (狂人)', 100)
+        RealisticBot("Bot 1 (TAG)", "TAG (緊兇常客)", 100.0),
+        RealisticBot("Bot 2 (LAG)", "LAG (鬆兇玩家)", 100.0),
+        RealisticBot("Bot 3 (Station)", "Calling Station (跟注站)", 100.0),
+        RealisticBot("Bot 4 (Nit)", "Nit (極緊石頭人)", 100.0),
+        RealisticBot("Bot 5 (Maniac)", "Maniac (狂暴玩家)", 100.0)
     ]
-    st.session_state.hero_stack = 100
-    st.session_state.deck = create_deck()
-    st.session_state.stage = 'START'
-    st.session_state.log = []
-
-def start_new_hand():
-    # 籌碼破產重置檢查 (Auto-reload)
-    if st.session_state.hero_stack <= 0:
-        st.session_state.hero_stack = 100
-        st.session_state.log.append("🔄 Hero 籌碼已耗盡，已為你重新補充至 100 BB。")
-        
-    for bot in st.session_state.bots:
-        if bot.stack <= 0:
-            bot.stack = 100
-            st.session_state.log.append(f"🔄 {bot.name} 籌碼耗盡，自動補滿至 100 BB。")
-            
-    # 輪換莊家位置
-    st.session_state.button_index = (st.session_state.button_index + 1) % 6
-    st.session_state.deck = create_deck()
-    random.shuffle(st.session_state.deck)
-    
-    # 發牌
-    st.session_state.hero_cards = [st.session_state.deck.pop(), st.session_state.deck.pop()]
-    st.session_state.board = []
-    st.session_state.pot = 1.5 # SB 0.5 + BB 1.0
-    st.session_state.hero_pos = POSITIONS_6MAX[st.session_state.button_index]
-    st.session_state.stage = 'PREFLOP'
+    st.session_state.stage = 'INIT'
     st.session_state.review_reports = []
 
-# --- 側邊欄：牌桌動態後手與設定 ---
-st.sidebar.title("🎰 牌桌動態後手 (No Rake)")
-st.sidebar.caption(f"第 {st.session_state.hand_count} 手牌 | 盲注: 0.5 / 1.0 BB")
+def start_new_hand():
+    # 破產自動補至 100BB
+    if st.session_state.hero_stack <= 0:
+        st.session_state.hero_stack = 100.0
+    for b in st.session_state.bots:
+        if b.stack <= 0:
+            b.stack = 100.0
 
-players_table = [{"玩家": "Hero (你)", "位置": st.session_state.get('hero_pos', 'UTG'), "後手 (BB)": f"{st.session_state.hero_stack:.1f}", "風格": "You"}]
-for b in st.session_state.bots:
-    players_table.append({"玩家": b.name, "位置": "動態", "後手 (BB)": f"{b.stack:.1f}", "風格": b.archetype})
-st.sidebar.table(players_table)
+    st.session_state.deck = create_deck()
+    random.shuffle(st.session_state.deck)
+    st.session_state.hero_cards = [st.session_state.deck.pop(), st.session_state.deck.pop()]
+    st.session_state.board = []
+    st.session_state.review_reports = []
+    
+    # 輪轉位置
+    st.session_state.btn_pos_idx = (st.session_state.btn_pos_idx + 1) % 6
+    st.session_state.hero_pos = POSITIONS[st.session_state.btn_pos_idx]
+    
+    # 盲注設定 (SB: 0.5 BB, BB: 1.0 BB)
+    st.session_state.pot = 1.5
+    st.session_state.hero_current_bet = 0.0
+    for b in st.session_state.bots:
+        b.current_bet = 0.0
 
-if st.sidebar.button("重新洗牌 / 重置全部籌碼"):
-    st.session_state.clear()
-    st.rerun()
+    # 模擬盲注扣除
+    if st.session_state.hero_pos == 'SB':
+        st.session_state.hero_current_bet = 0.5
+        st.session_state.hero_stack -= 0.5
+    elif st.session_state.hero_pos == 'BB':
+        st.session_state.hero_current_bet = 1.0
+        st.session_state.hero_stack -= 1.0
+        
+    st.session_state.stage = 'PREFLOP'
 
-# --- 主遊戲區 ---
-st.title("🃏 6-Max Cash Game GTO 教練系統")
+if st.session_state.stage == 'INIT':
+    start_new_hand()
 
-if st.session_state.stage == 'START':
-    st.info("點擊下方按鈕開始對局。盲注 0.5 / 1.0 BB，所有玩家 100BB 深度開始，籌碼動態增減。")
-    if st.button("開始發牌", type="primary"):
-        start_new_hand()
+# ==========================================
+# 4. GGPoker 風格牌桌 UI (純 CSS 渲染)
+# ==========================================
+def render_card_html(card):
+    suit = card[-1]
+    rank = card[:-1]
+    color = "#e53e3e" if suit in ['♥', '♦'] else "#1a202c"
+    return f"""
+    <div style="display:inline-block; width:48px; height:68px; background:#ffffff; border-radius:6px; 
+                border:1px solid #718096; margin:2px; font-weight:bold; font-size:18px; 
+                line-height:68px; text-align:center; color:{color}; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">
+        {rank}{suit}
+    </div>
+    """
+
+board_html = "".join([render_card_html(c) for c in st.session_state.board]) if st.session_state.board else "<span style='color:#a0aec0; font-size:14px;'>等待翻牌發出...</span>"
+hero_cards_html = "".join([render_card_html(c) for c in st.session_state.hero_cards])
+
+# 6 個座位在橢圓桌的相對佈局
+table_html = f"""
+<div style="background-color:#121212; padding:20px; border-radius:16px;">
+  <div style="
+    position: relative;
+    width: 100%;
+    max-width: 850px;
+    height: 480px;
+    margin: 0 auto;
+    background: radial-gradient(circle, #1e4d2b 0%, #0d2818 85%, #05140b 100%);
+    border: 14px solid #3c2415;
+    border-radius: 220px;
+    box-shadow: inset 0 0 40px rgba(0,0,0,0.9), 0 10px 25px rgba(0,0,0,0.8);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  ">
+    <!-- 中央底池與公牌區 -->
+    <div style="position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%); text-align: center;">
+      <div style="background: rgba(0,0,0,0.7); padding: 5px 16px; border-radius: 20px; color: #f6e05e; font-weight:bold; font-size:16px; border: 1px solid #d69e2e; margin-bottom: 8px; display:inline-block;">
+        🪙 Total Pot: {st.session_state.pot:.1f} BB
+      </div>
+      <div>{board_html}</div>
+    </div>
+
+    <!-- 座位 1 (Top Left) -->
+    <div style="position: absolute; top: 8%; left: 18%; text-align: center;">
+      <div style="color: #68d391; font-weight: bold; font-size: 13px;">{st.session_state.bots[0].current_bet:.1f} BB 🟡</div>
+      <div style="background: #1a202c; border: 2px solid #4a5568; border-radius: 8px; padding: 4px 10px; color: white;">
+        <span style="background: #e2e8f0; color: black; border-radius: 4px; padding: 1px 4px; font-size: 10px; font-weight: bold;">HJ</span> {st.session_state.bots[0].name.split()[0]}
+        <div style="color: #ecc94b; font-weight: bold; font-size: 12px;">{st.session_state.bots[0].stack:.1f} BB</div>
+      </div>
+    </div>
+
+    <!-- 座位 2 (Top Center) -->
+    <div style="position: absolute; top: 4%; left: 45%; text-align: center;">
+      <div style="color: #68d391; font-weight: bold; font-size: 13px;">{st.session_state.bots[1].current_bet:.1f} BB 🟡</div>
+      <div style="background: #1a202c; border: 2px solid #4a5568; border-radius: 8px; padding: 4px 10px; color: white;">
+        <span style="background: #e2e8f0; color: black; border-radius: 4px; padding: 1px 4px; font-size: 10px; font-weight: bold;">CO</span> {st.session_state.bots[1].name.split()[0]}
+        <div style="color: #ecc94b; font-weight: bold; font-size: 12px;">{st.session_state.bots[1].stack:.1f} BB</div>
+      </div>
+    </div>
+
+    <!-- 座位 3 (Top Right) -->
+    <div style="position: absolute; top: 8%; right: 18%; text-align: center;">
+      <div style="color: #68d391; font-weight: bold; font-size: 13px;">{st.session_state.bots[2].current_bet:.1f} BB 🟡</div>
+      <div style="background: #1a202c; border: 2px solid #4a5568; border-radius: 8px; padding: 4px 10px; color: white;">
+        <span style="background: #e2e8f0; color: black; border-radius: 4px; padding: 1px 4px; font-size: 10px; font-weight: bold;">BTN</span> {st.session_state.bots[2].name.split()[0]}
+        <div style="color: #ecc94b; font-weight: bold; font-size: 12px;">{st.session_state.bots[2].stack:.1f} BB</div>
+      </div>
+    </div>
+
+    <!-- 座位 4 (Bottom Right) -->
+    <div style="position: absolute; bottom: 12%; right: 12%; text-align: center;">
+      <div style="color: #68d391; font-weight: bold; font-size: 13px;">{st.session_state.bots[3].current_bet:.1f} BB 🟡</div>
+      <div style="background: #1a202c; border: 2px solid #4a5568; border-radius: 8px; padding: 4px 10px; color: white;">
+        <span style="background: #e2e8f0; color: black; border-radius: 4px; padding: 1px 4px; font-size: 10px; font-weight: bold;">SB</span> {st.session_state.bots[3].name.split()[0]}
+        <div style="color: #ecc94b; font-weight: bold; font-size: 12px;">{st.session_state.bots[3].stack:.1f} BB</div>
+      </div>
+    </div>
+
+    <!-- 座位 5 (Bottom Left) -->
+    <div style="position: absolute; bottom: 12%; left: 12%; text-align: center;">
+      <div style="color: #68d391; font-weight: bold; font-size: 13px;">{st.session_state.bots[4].current_bet:.1f} BB 🟡</div>
+      <div style="background: #1a202c; border: 2px solid #4a5568; border-radius: 8px; padding: 4px 10px; color: white;">
+        <span style="background: #e2e8f0; color: black; border-radius: 4px; padding: 1px 4px; font-size: 10px; font-weight: bold;">BB</span> {st.session_state.bots[4].name.split()[0]}
+        <div style="color: #ecc94b; font-weight: bold; font-size: 12px;">{st.session_state.bots[4].stack:.1f} BB</div>
+      </div>
+    </div>
+
+    <!-- HERO 玩家席位 (Bottom Center - 正下方) -->
+    <div style="position: absolute; bottom: -8px; left: 50%; transform: translateX(-50%); text-align: center;">
+      <div style="color: #48bb78; font-weight: bold; font-size: 14px; text-shadow: 0 1px 3px black;">
+        {f'下注: {st.session_state.hero_current_bet:.1f} BB' if st.session_state.hero_current_bet > 0 else 'CHECK'}
+      </div>
+      <div>{hero_cards_html}</div>
+      <div style="background: #2d3748; border: 2px solid #ecc94b; border-radius: 8px; padding: 4px 16px; color: white; display:inline-block; margin-top:-5px;">
+        <span style="background: #ecc94b; color: black; border-radius: 4px; padding: 1px 6px; font-size: 11px; font-weight: bold;">{st.session_state.hero_pos}</span> <strong>HERO (你)</strong>
+        <div style="color: #48bb78; font-weight: bold; font-size: 13px;">{st.session_state.hero_stack:.1f} BB</div>
+      </div>
+    </div>
+  </div>
+</div>
+"""
+st.markdown(table_html, unsafe_allow_html=True)
+st.write("")
+
+# ==========================================
+# 5. 操作控制台與下注滑桿 (Controls)
+# ==========================================
+hand_cat = get_hand_category(st.session_state.hero_cards[0], st.session_state.hero_cards[1])
+texture = evaluate_board_texture(st.session_state.board)
+
+if st.session_state.stage == 'PREFLOP':
+    st.subheader(f"🎮 翻前輪到你行動 (位置: {st.session_state.hero_pos} | 手牌類別: {hand_cat})")
+    col_act, col_slider = st.columns([1, 2])
+    
+    with col_act:
+        pf_action = st.radio("你的決策:", ['Fold', 'Call (1.0 BB)', 'Open Raise'], horizontal=True)
+        
+    with col_slider:
+        if pf_action == 'Open Raise':
+            raise_size = st.slider("選擇加注尺寸 (BB):", min_value=2.0, max_value=min(10.0, float(st.session_state.hero_stack)), value=2.5, step=0.5)
+        else:
+            st.info("點擊下方確認按鈕推進手牌。")
+
+    if st.button("確認翻前行動", type="primary"):
+        gto_eval = analyze_preflop_gto(hand_cat, st.session_state.hero_pos)
+        st.session_state.review_reports.append(gto_eval)
+        
+        if pf_action == 'Fold':
+            st.session_state.stage = 'SHOWDOWN'
+            st.session_state.review_reports.append("ℹ️ 你選擇了 Fold。本局提前結束。")
+        else:
+            cost = 1.0 if 'Call' in pf_action else raise_size
+            st.session_state.hero_stack -= cost
+            st.session_state.pot += cost
+            st.session_state.hero_current_bet = cost
+            # 發出翻牌 3 張
+            st.session_state.board = [st.session_state.deck.pop(), st.session_state.deck.pop(), st.session_state.deck.pop()]
+            st.session_state.stage = 'FLOP'
         st.rerun()
 
-elif st.session_state.stage in ['PREFLOP', 'FLOP', 'SHOWDOWN']:
-    c1, c2 = st.columns([1, 2])
+elif st.session_state.stage == 'FLOP':
+    st.subheader(f"🎮 翻牌圈決策 (牌面結構: {texture})")
+    col_act, col_slider = st.columns([1, 2])
     
-    with c1:
-        st.subheader("🎴 你的手牌")
-        st.markdown(f"## `{st.session_state.hero_cards[0]}` `{st.session_state.hero_cards[1]}`")
-        hand_cat = get_hand_category(st.session_state.hero_cards[0], st.session_state.hero_cards[1])
-        st.write(f"手牌類別: **{hand_cat}** | 位置: **{st.session_state.hero_pos}**")
-        st.write(f"你的當前後手: **{st.session_state.hero_stack:.1f} BB**")
+    with col_act:
+        flop_action = st.radio("選擇行動:", ['Check', 'C-bet 下注'], horizontal=True)
         
-    with c2:
-        st.subheader("🎯 公共牌面 (Board)")
-        board_disp = " ".join([f"`{c}`" for c in st.session_state.board]) if st.session_state.board else "_翻前階段尚無發牌_"
-        st.markdown(f"### {board_disp}")
-        texture = evaluate_board_texture(st.session_state.board)
-        st.write(f"牌面結構: **{texture}** | 當前底池: **{st.session_state.pot:.1f} BB**")
+    with col_slider:
+        if flop_action == 'C-bet 下注':
+            # 支援滑桿無級別選擇，並即時顯示換算成 % Pot
+            max_bet = float(min(st.session_state.hero_stack, st.session_state.pot * 2.5))
+            cbet_val = st.slider("C-bet 尺寸 (BB):", min_value=1.0, max_value=max_bet, value=round(st.session_state.pot * 0.33, 1), step=0.5)
+            pct_pot = (cbet_val / st.session_state.pot) * 100
+            st.caption(f"⚡ 當前選擇相當於底池的 **{pct_pot:.1f}%**")
 
+    if st.button("確認翻牌圈行動並取得 GTO 分析", type="primary"):
+        if flop_action == 'C-bet 下注':
+            st.session_state.hero_stack -= cbet_val
+            st.session_state.pot += cbet_val
+            st.session_state.hero_current_bet = cbet_val
+            cbet_evals = analyze_postflop_gto_slider(cbet_val, st.session_state.pot - cbet_val, texture)
+            st.session_state.review_reports.extend(cbet_evals)
+        else:
+            st.session_state.hero_current_bet = 0.0
+            st.session_state.review_reports.append("🛡️ **Check 決策評估**: 控制底池完全符合 GTO 混合策略。當手牌沒有堅果優勢時，過牌是標準防守線。")
+
+        st.session_state.stage = 'SHOWDOWN'
+        st.rerun()
+
+elif st.session_state.stage == 'SHOWDOWN':
+    st.markdown("### 🧠 GTO 教練覆盤與剝削指導")
+    for r in st.session_state.review_reports:
+        st.markdown(r)
+        
     st.divider()
-
-    # --- 行動控制台與 GTO 決策點 ---
-    if st.session_state.stage == 'PREFLOP':
-        st.subheader("翻前決策 (Preflop Action)")
-        action = st.radio("選擇你的動作:", ['Fold', 'Call (1.0 BB)', 'Open Raise (2.5 BB)'], horizontal=True)
-        
-        if st.button("執行並獲取 GTO 覆盤"):
-            # 翻前 GTO 覆盤生成
-            gto_eval = analyze_preflop_gto(hand_cat, st.session_state.hero_pos)
-            st.session_state.review_reports.append(gto_eval)
-            
-            if action == 'Fold':
-                st.session_state.stage = 'SHOWDOWN'
-                st.session_state.review_reports.append("ℹ️ 你選擇了 Fold。本局結束。")
-            else:
-                cost = 1.0 if 'Call' in action else 2.5
-                st.session_state.hero_stack -= cost
-                st.session_state.pot += cost
-                # 發 Flop
-                st.session_state.board = [st.session_state.deck.pop(), st.session_state.deck.pop(), st.session_state.deck.pop()]
-                st.session_state.stage = 'FLOP'
-            st.rerun()
-
-    elif st.session_state.stage == 'FLOP':
-        st.subheader("翻牌圈決策 (Flop C-bet / Defense)")
-        texture = evaluate_board_texture(st.session_state.board)
-        action = st.radio("你的行動:", ['Check', 'Bet 33% Pot', 'Bet 67% Pot', 'Overbet 125% Pot'], horizontal=True)
-        
-        if st.button("確認翻牌圈行動並覆盤"):
-            # 翻後下注尺寸 GTO 覆盤生成
-            if 'Bet' in action:
-                pct = 0.33 if '33%' in action else (0.67 if '67%' in action else 1.25)
-                bet_amt = round(st.session_state.pot * pct, 1)
-                st.session_state.hero_stack -= bet_amt
-                st.session_state.pot += bet_amt
-                
-                if "Dry" in texture:
-                    if pct <= 0.35:
-                        st.session_state.review_reports.append("🎯 **C-bet 尺寸評估 (優秀)**: 乾燥面上有顯著的『範圍優勢』，GTO 推薦使用 25%-33% 的小下注保持高頻率施壓。")
-                    else:
-                        st.session_state.review_reports.append("⚠️ **C-bet 尺寸評估 (不佳)**: 乾燥面上不需要打大注保護，超額下注會讓對手的邊緣跟注範圍輕易逃脫。")
-                elif "Wet" in texture:
-                    if pct >= 0.65:
-                        st.session_state.review_reports.append("🎯 **C-bet 尺寸評估 (優秀)**: 濕滑面存在大量聽牌，GTO 傾向使用 66%-75% 較大尺寸建立堅果保護並剝奪對手賠率。")
-                    else:
-                        st.session_state.review_reports.append("⚠️ **C-bet 尺寸評估 (偏小)**: 33% 尺寸在動態面給予了對手極佳的隱含賠率去買順子/同花。")
-            else:
-                st.session_state.review_reports.append("🛡️ **Check 決策評估**: 在缺乏堅果優勢或屬於底池邊緣攤牌價值的牌力時，Check 控制底池完全符合 GTO 混合策略。")
-            
-            # 直接進 Showdown 結算
-            st.session_state.stage = 'SHOWDOWN'
-            st.rerun()
-
-    elif st.session_state.stage == 'SHOWDOWN':
-        st.subheader("🏁 牌局總結與 GTO / 剝削覆盤報告")
-        
-        # 顯示教練報告
-        for rep in st.session_state.review_reports:
-            st.markdown(rep)
-            
-        st.markdown("---")
-        st.markdown("#### 📐 核心 GTO 數學公式核算")
-        
-        # MDF 公式與底池賠率展示
-        st.markdown(r"""
-        * **最低防守頻率 (MDF, Minimum Defense Frequency)**:
-          $$\text{MDF} = \frac{\text{Pot}}{\text{Pot} + \text{Bet}}$$
-          *用以防止對手使用 0 勝率的手牌進行任意無成本詐唬。*
-        * **底池賠率 (Pot Odds)**:
-          $$\text{Pot Odds} = \frac{\text{Call Amount}}{\text{Current Pot} + \text{Call Amount}}$$
-          *你的手牌勝率（Equity）必須大於此數值，跟注才具備長期正期望值 ($+EV$)。*
-        """)
-        
-        # 結算籌碼動態 (模擬給獲勝者或發下一把)
-        if st.button("下一手牌 (繼續對局)", type="primary"):
-            st.session_state.hand_count += 1
-            # 簡單模擬：隨機將底池給予一位玩家，確保籌碼動態演變
-            winner = random.choice(['Hero'] + [b.name for b in st.session_state.bots])
-            if winner == 'Hero':
-                st.session_state.hero_stack += st.session_state.pot
-            else:
-                for b in st.session_state.bots:
-                    if b.name == winner:
-                        b.stack += st.session_state.pot
-                        break
-            start_new_hand()
-            st.rerun()
+    if st.button("下一手牌 (繼續對局)", type="primary"):
+        st.session_state.hand_count += 1
+        # 模擬分配底池（若有下注且未棄牌，Hero 依勝率拿回或隨機結算籌碼動態）
+        st.session_state.hero_stack += st.session_state.pot
+        start_new_hand()
+        st.rerun()

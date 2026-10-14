@@ -190,7 +190,8 @@ board_html = "".join([render_card_html(c) for c in st.session_state.board]) if s
 hero_cards_html = "".join([render_card_html(c) for c in st.session_state.hero_cards])
 
 # 6 個座位在橢圓桌的相對佈局
-table_html = f"""
+# 注意這裡使用 Python 的多行字串，確保雙引號單引號不會衝突
+table_html = """
 <div style="background-color:#121212; padding:20px; border-radius:16px;">
   <div style="
     position: relative;
@@ -207,71 +208,86 @@ table_html = f"""
     <!-- 中央底池與公牌區 -->
     <div style="position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%); text-align: center;">
       <div style="background: rgba(0,0,0,0.7); padding: 5px 16px; border-radius: 20px; color: #f6e05e; font-weight:bold; font-size:16px; border: 1px solid #d69e2e; margin-bottom: 8px; display:inline-block;">
-        🪙 Total Pot: {st.session_state.pot:.1f} BB
+        🪙 Total Pot: {pot:.1f} BB
       </div>
       <div>{board_html}</div>
     </div>
 
     <!-- 座位 1 (Top Left) -->
     <div style="position: absolute; top: 8%; left: 18%; text-align: center;">
-      <div style="color: #68d391; font-weight: bold; font-size: 13px;">{st.session_state.bots[0].current_bet:.1f} BB 🟡</div>
+      <div style="color: #68d391; font-weight: bold; font-size: 13px;">{bot0_bet:.1f} BB 🟡</div>
       <div style="background: #1a202c; border: 2px solid #4a5568; border-radius: 8px; padding: 4px 10px; color: white;">
-        <span style="background: #e2e8f0; color: black; border-radius: 4px; padding: 1px 4px; font-size: 10px; font-weight: bold;">HJ</span> {st.session_state.bots[0].name.split()[0]}
-        <div style="color: #ecc94b; font-weight: bold; font-size: 12px;">{st.session_state.bots[0].stack:.1f} BB</div>
+        <span style="background: #e2e8f0; color: black; border-radius: 4px; padding: 1px 4px; font-size: 10px; font-weight: bold;">HJ</span> {bot0_name}
+        <div style="color: #ecc94b; font-weight: bold; font-size: 12px;">{bot0_stack:.1f} BB</div>
       </div>
     </div>
 
     <!-- 座位 2 (Top Center) -->
     <div style="position: absolute; top: 4%; left: 45%; text-align: center;">
-      <div style="color: #68d391; font-weight: bold; font-size: 13px;">{st.session_state.bots[1].current_bet:.1f} BB 🟡</div>
+      <div style="color: #68d391; font-weight: bold; font-size: 13px;">{bot1_bet:.1f} BB 🟡</div>
       <div style="background: #1a202c; border: 2px solid #4a5568; border-radius: 8px; padding: 4px 10px; color: white;">
-        <span style="background: #e2e8f0; color: black; border-radius: 4px; padding: 1px 4px; font-size: 10px; font-weight: bold;">CO</span> {st.session_state.bots[1].name.split()[0]}
-        <div style="color: #ecc94b; font-weight: bold; font-size: 12px;">{st.session_state.bots[1].stack:.1f} BB</div>
+        <span style="background: #e2e8f0; color: black; border-radius: 4px; padding: 1px 4px; font-size: 10px; font-weight: bold;">CO</span> {bot1_name}
+        <div style="color: #ecc94b; font-weight: bold; font-size: 12px;">{bot1_stack:.1f} BB</div>
       </div>
     </div>
 
     <!-- 座位 3 (Top Right) -->
     <div style="position: absolute; top: 8%; right: 18%; text-align: center;">
-      <div style="color: #68d391; font-weight: bold; font-size: 13px;">{st.session_state.bots[2].current_bet:.1f} BB 🟡</div>
+      <div style="color: #68d391; font-weight: bold; font-size: 13px;">{bot2_bet:.1f} BB 🟡</div>
       <div style="background: #1a202c; border: 2px solid #4a5568; border-radius: 8px; padding: 4px 10px; color: white;">
-        <span style="background: #e2e8f0; color: black; border-radius: 4px; padding: 1px 4px; font-size: 10px; font-weight: bold;">BTN</span> {st.session_state.bots[2].name.split()[0]}
-        <div style="color: #ecc94b; font-weight: bold; font-size: 12px;">{st.session_state.bots[2].stack:.1f} BB</div>
+        <span style="background: #e2e8f0; color: black; border-radius: 4px; padding: 1px 4px; font-size: 10px; font-weight: bold;">BTN</span> {bot2_name}
+        <div style="color: #ecc94b; font-weight: bold; font-size: 12px;">{bot2_stack:.1f} BB</div>
       </div>
     </div>
 
     <!-- 座位 4 (Bottom Right) -->
     <div style="position: absolute; bottom: 12%; right: 12%; text-align: center;">
-      <div style="color: #68d391; font-weight: bold; font-size: 13px;">{st.session_state.bots[3].current_bet:.1f} BB 🟡</div>
+      <div style="color: #68d391; font-weight: bold; font-size: 13px;">{bot3_bet:.1f} BB 🟡</div>
       <div style="background: #1a202c; border: 2px solid #4a5568; border-radius: 8px; padding: 4px 10px; color: white;">
-        <span style="background: #e2e8f0; color: black; border-radius: 4px; padding: 1px 4px; font-size: 10px; font-weight: bold;">SB</span> {st.session_state.bots[3].name.split()[0]}
-        <div style="color: #ecc94b; font-weight: bold; font-size: 12px;">{st.session_state.bots[3].stack:.1f} BB</div>
+        <span style="background: #e2e8f0; color: black; border-radius: 4px; padding: 1px 4px; font-size: 10px; font-weight: bold;">SB</span> {bot3_name}
+        <div style="color: #ecc94b; font-weight: bold; font-size: 12px;">{bot3_stack:.1f} BB</div>
       </div>
     </div>
 
     <!-- 座位 5 (Bottom Left) -->
     <div style="position: absolute; bottom: 12%; left: 12%; text-align: center;">
-      <div style="color: #68d391; font-weight: bold; font-size: 13px;">{st.session_state.bots[4].current_bet:.1f} BB 🟡</div>
+      <div style="color: #68d391; font-weight: bold; font-size: 13px;">{bot4_bet:.1f} BB 🟡</div>
       <div style="background: #1a202c; border: 2px solid #4a5568; border-radius: 8px; padding: 4px 10px; color: white;">
-        <span style="background: #e2e8f0; color: black; border-radius: 4px; padding: 1px 4px; font-size: 10px; font-weight: bold;">BB</span> {st.session_state.bots[4].name.split()[0]}
-        <div style="color: #ecc94b; font-weight: bold; font-size: 12px;">{st.session_state.bots[4].stack:.1f} BB</div>
+        <span style="background: #e2e8f0; color: black; border-radius: 4px; padding: 1px 4px; font-size: 10px; font-weight: bold;">BB</span> {bot4_name}
+        <div style="color: #ecc94b; font-weight: bold; font-size: 12px;">{bot4_stack:.1f} BB</div>
       </div>
     </div>
 
     <!-- HERO 玩家席位 (Bottom Center - 正下方) -->
     <div style="position: absolute; bottom: -8px; left: 50%; transform: translateX(-50%); text-align: center;">
       <div style="color: #48bb78; font-weight: bold; font-size: 14px; text-shadow: 0 1px 3px black;">
-        {f'下注: {st.session_state.hero_current_bet:.1f} BB' if st.session_state.hero_current_bet > 0 else 'CHECK'}
+        {hero_action_text}
       </div>
       <div>{hero_cards_html}</div>
       <div style="background: #2d3748; border: 2px solid #ecc94b; border-radius: 8px; padding: 4px 16px; color: white; display:inline-block; margin-top:-5px;">
-        <span style="background: #ecc94b; color: black; border-radius: 4px; padding: 1px 6px; font-size: 11px; font-weight: bold;">{st.session_state.hero_pos}</span> <strong>HERO (你)</strong>
-        <div style="color: #48bb78; font-weight: bold; font-size: 13px;">{st.session_state.hero_stack:.1f} BB</div>
+        <span style="background: #ecc94b; color: black; border-radius: 4px; padding: 1px 6px; font-size: 11px; font-weight: bold;">{hero_pos}</span> <strong>HERO (你)</strong>
+        <div style="color: #48bb78; font-weight: bold; font-size: 13px;">{hero_stack:.1f} BB</div>
       </div>
     </div>
   </div>
 </div>
 """
-st.markdown(table_html, unsafe_allow_html=True)
+
+formatted_table_html = table_html.format(
+    pot=st.session_state.pot,
+    board_html=board_html,
+    bot0_bet=st.session_state.bots[0].current_bet, bot0_name=st.session_state.bots[0].name.split()[0], bot0_stack=st.session_state.bots[0].stack,
+    bot1_bet=st.session_state.bots[1].current_bet, bot1_name=st.session_state.bots[1].name.split()[0], bot1_stack=st.session_state.bots[1].stack,
+    bot2_bet=st.session_state.bots[2].current_bet, bot2_name=st.session_state.bots[2].name.split()[0], bot2_stack=st.session_state.bots[2].stack,
+    bot3_bet=st.session_state.bots[3].current_bet, bot3_name=st.session_state.bots[3].name.split()[0], bot3_stack=st.session_state.bots[3].stack,
+    bot4_bet=st.session_state.bots[4].current_bet, bot4_name=st.session_state.bots[4].name.split()[0], bot4_stack=st.session_state.bots[4].stack,
+    hero_action_text=f'下注: {st.session_state.hero_current_bet:.1f} BB' if st.session_state.hero_current_bet > 0 else 'CHECK',
+    hero_cards_html=hero_cards_html,
+    hero_pos=st.session_state.hero_pos,
+    hero_stack=st.session_state.hero_stack
+)
+
+st.markdown(formatted_table_html, unsafe_allow_html=True)
 st.write("")
 
 # ==========================================
